@@ -1,0 +1,7 @@
+- insert:
+    - id: plugin-lab-control
+      name: dsh-plugin-lab/control
+    - id: plugin-lab-runtime
+      name: dsh-plugin-lab
+      config:
+        enabled: false

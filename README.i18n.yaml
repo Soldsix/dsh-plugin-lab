@@ -1,0 +1,34 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write README.md
+/:
+  en: b4589b135287afff
+  zh: 517d138182423dcb
+/dsh-plugin-lab:
+  en: 03209545b4a3f014
+  zh: 9eddd2b23271fa21
+/dsh-plugin-lab/summary:
+  en: b95a81d99be38c45
+  zh: 9be8b67208ab3281
+/dsh-plugin-lab/table-of-contents:
+  en: 3a124b95c0300525
+  zh: 3ff6e6f2cd0c5c64
+/dsh-plugin-lab/current-use-and-scope:
+  en: d7ecc063d856292f
+  zh: ab465bc7810fe069
+/dsh-plugin-lab/native-owner-page:
+  en: 115d1798153c7292
+  zh: 5278eac61e8c35f3
+/dsh-plugin-lab/scenario-example:
+  en: 0a61328d7204c3c3
+  zh: b3d1815f5bcc3269
+/dsh-plugin-lab/storage-and-cancellation:
+  en: dab3dc8e7e773a1d
+  zh: 9c8275da69d5ac82
+/dsh-plugin-lab/model-experience:
+  en: d94a7228eac6a003
+  zh: b1b055cf9cfd2397
+/dsh-plugin-lab/known-limitations-and-deferred-work:
+  en: 95a89f3ab9874847
+  zh: b3e0c7543d6d3990
