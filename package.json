@@ -54,14 +54,14 @@
     "@deepseek-ai/schemastery": "~3.19.0",
     "@deepseek-ai/dsh-app-boot": "0.2.2-rc.1",
     "@deepseek-ai/dsh-brand": "0.2.2-rc.1",
-    "dsh-im-kit": "0.2.0",
     "@deepseek-ai/cordis-plugin-loader": "~1.1.0",
     "@deepseek-ai/dsh-config-editor": "0.2.2-rc.1",
     "@deepseek-ai/dsh-client-connection": "0.2.2-rc.1",
     "@deepseek-ai/dsh-typert-protocol": "0.2.2-rc.1"
   },
   "dependencies": {
-    "zod": "4.6.6"
+    "zod": "4.6.6",
+    "dsh-im-kit": "https://github.com/Soldsix/dsh-im-kit/releases/download/v0.2.1/dsh-im-kit-0.2.1.tgz"
   },
   "devDependencies": {
     "@deepseek-ai/dsh": "0.2.2-rc.1",
@@ -92,7 +92,8 @@
     "yaml": "2.9.1",
     "playwright": "1.65.0",
     "immer": "10.2.0",
-    "zustand": "~4.5.7"
+    "zustand": "~4.5.7",
+    "pnpm": "10.33.2"
   },
   "overrides": {
     "zod": "4.6.6",
@@ -111,5 +112,13 @@
     "test:web": "node scripts/integration/test-web.mjs",
     "test:real-api": "node scripts/integration/test-real-api.mjs",
     "test:consumer": "node scripts/integration/test-consumer.mjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Soldsix/dsh-plugin-lab.git"
+  },
+  "homepage": "https://github.com/Soldsix/dsh-plugin-lab",
+  "bugs": {
+    "url": "https://github.com/Soldsix/dsh-plugin-lab/issues"
   }
 }

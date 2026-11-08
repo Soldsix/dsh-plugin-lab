@@ -12,7 +12,7 @@ import {parse} from 'yaml'
  */
 export function verifyManifest(manifest){
  assert.equal(manifest.name,'dsh-plugin-lab');assert.equal(manifest.type,'module');assert.equal(manifest.license,'MIT');assert.ok(!manifest.bin)
- assert.equal(manifest.engines?.dsh,'0.2.2-rc.1');assert.equal(manifest.peerDependencies?.['dsh-im-kit'],'0.2.0');assert.equal(manifest.dsh?.bundle?.patch,'./cordis.patch.yml')
+ assert.equal(manifest.engines?.dsh,'0.2.2-rc.1');assert.equal(manifest.dependencies?.['dsh-im-kit'],'https://github.com/Soldsix/dsh-im-kit/releases/download/v0.2.1/dsh-im-kit-0.2.1.tgz');assert.equal(manifest.dsh?.bundle?.patch,'./cordis.patch.yml')
  assert.equal(manifest.exports?.['.']?.import,'./dist/index.js');assert.equal(manifest.exports?.['./control']?.import,'./dist/control.js');assert.equal(manifest.exports?.['./client']?.default,'./dist/client.js');assert.equal(manifest.dsh?.client?.platform,'web')
  for(const section of ['dependencies','peerDependencies','devDependencies'])for(const [key,value]of Object.entries(manifest[section]??{}))assert.ok(!/^(?:file:|link:|workspace:|[a-z]:[\\/]|[\\/])/i.test(value),'Nonportable dependency '+key)
 }
@@ -23,8 +23,10 @@ export function verifyManifest(manifest){
  */
 export function verifyPair(english,chinese){
  for(const text of [english,chinese]){assert.match(text,/^kind: "package-bundle"$/m);assert.match(text,/^description: ".+"$/m)}
- assert.equal(english.split('\n').length,chinese.split('\n').length)
- assert.ok(english.split('## Summary\n')[1].split('\n## ')[0].trim().split(/\s+/).length<=100)
+ const englishLines=english.split(/\r?\n/u),chineseLines=chinese.split(/\r?\n/u)
+ assert.equal(englishLines.length,chineseLines.length)
+ const summary=englishLines.join('\n').split('## Summary\n')[1];assert.ok(summary,'Missing summary')
+ assert.ok(summary.split('\n## ')[0].trim().split(/\s+/).length<=100)
  const anchors=text=>[...text.matchAll(/<a id="([^"]+)">/g)].map(item=>item[1]);assert.deepEqual(anchors(english),anchors(chinese))
 }
 /**
@@ -44,7 +46,7 @@ export function verifyFiles(paths){
 export function verifyText(text,label){
  assert.ok(!/[c-f]:[\\/](?:users|个人|项目工作区)[\\/]/i.test(text),'Private machine path in '+label)
  assert.ok(!/\bsk-[a-z0-9]{20,}\b/i.test(text),'Credential-like literal in '+label);assert.ok(!/\bas unknown\b/.test(text),'Unknown assertion in '+label)
- assert.ok(text.endsWith('\n')&&!text.endsWith('\n\n'),'Trailing newline in '+label)
+ assert.ok(/\r?\n$/u.test(text)&&!/(?:\r?\n){2}$/u.test(text),'Trailing newline in '+label)
 }
 async function sources(directory){const paths=[];for(const item of await readdir(directory,{withFileTypes:true})){const path=resolve(directory,item.name);if(item.isDirectory())paths.push(...await sources(path));else if(/\.tsx?$/.test(item.name))paths.push(path)}return paths}
 async function main(){

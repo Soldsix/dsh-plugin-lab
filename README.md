@@ -22,7 +22,7 @@ Exercise staged conversations with synthetic identities, retain complete source 
 <a id="current-use-and-scope"></a>
 ## Current use and scope
 
-The development bundle requires DSH 0.2.2-rc.1, Node ^22.19 or >=24 and the independent dsh-im-kit 0.2.0 library. It is disabled by default. Enabled runtime requires a dedicated profile without another IM provider; it refuses to replace an existing one. Each run maps synthetic aliases to independent accounts, actors and peers. An installed consumer such as dsh-qq-chat supplies actual chat behavior; this package implements neither a model client nor a live QQ sender.
+The development bundle requires DSH 0.2.2-rc.1, Node ^22.19 or >=24 and the independent dsh-im-kit 0.2.1 library. It is disabled by default. Enabled runtime requires a dedicated profile without another IM provider; it refuses to replace an existing one. Each run maps synthetic aliases to independent accounts, actors and peers. An installed consumer such as dsh-qq-chat supplies actual chat behavior; this package implements neither a model client nor a live QQ sender.
 
 Isolated SDK and Web profiles install the tarballs through the normal DSH plugin manager; no production profile is imported. After installing peer dependencies, `npm run check` builds and tests the source. `npm pack --pack-destination artifacts` creates the package used by the integration scripts. The Host service offers `run`, background `start`, `wait`, `cancel`, `inspect`, `list`, `export` and metadata-only `status`. A missing consumer is an explicit failure.
 

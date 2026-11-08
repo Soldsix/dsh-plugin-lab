@@ -22,7 +22,7 @@ kind: "package-bundle"
 <a id="current-use-and-scope"></a>
 ## 当前用法与范围
 
-本开发 bundle 需要 DSH 0.2.2-rc.1、Node ^22.19 或 >=24，以及独立共用库 dsh-im-kit 0.2.0，默认关闭。启用运行时需要没有其他 IM 提供方的独立 profile；已有提供方不会被替换。每轮运行将合成别名转换为独立账号、发件人与会话身份。实际聊天行为由 dsh-qq-chat 等已安装消费者提供；本包不实现模型客户端或真实 QQ 发送器。
+本开发 bundle 需要 DSH 0.2.2-rc.1、Node ^22.19 或 >=24，以及独立共用库 dsh-im-kit 0.2.1，默认关闭。启用运行时需要没有其他 IM 提供方的独立 profile；已有提供方不会被替换。每轮运行将合成别名转换为独立账号、发件人与会话身份。实际聊天行为由 dsh-qq-chat 等已安装消费者提供；本包不实现模型客户端或真实 QQ 发送器。
 
 隔离 SDK 与 Web profile 通过正常 DSH 插件管理器安装压缩包，不导入生产 profile。安装 peer 依赖后，`npm run check` 构建并测试源码；`npm pack --pack-destination artifacts` 生成整合脚本使用的包。Host 服务提供 `run`、后台 `start`、`wait`、`cancel`、`inspect`、`list`、`export` 及只含元数据的 `status`。没有消费者时明确失败。
 

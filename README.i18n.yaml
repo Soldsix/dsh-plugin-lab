@@ -3,8 +3,11 @@
 # After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write README.md
 /:
-  en: b4589b135287afff
-  zh: 517d138182423dcb
+  en: cb3f91d54eee30e5
+  zh: cb3f91d54eee30e5
+/description-run-staged-synthetic-conversations-through-im-consumers-and-retain-structured-local-output-kind-package-bundle:
+  en: 40dd8d62a9de1019
+  zh: 735d21c29fdcf0cc
 /dsh-plugin-lab:
   en: 03209545b4a3f014
   zh: 9eddd2b23271fa21
@@ -12,11 +15,11 @@
   en: b95a81d99be38c45
   zh: 9be8b67208ab3281
 /dsh-plugin-lab/table-of-contents:
-  en: 3a124b95c0300525
-  zh: 3ff6e6f2cd0c5c64
+  en: 73e12471ee0b8a0f
+  zh: 48f32d839feef262
 /dsh-plugin-lab/current-use-and-scope:
-  en: d7ecc063d856292f
-  zh: ab465bc7810fe069
+  en: 4923d28be33e5d30
+  zh: 4a2955369d44f1ce
 /dsh-plugin-lab/native-owner-page:
   en: 115d1798153c7292
   zh: 5278eac61e8c35f3
@@ -30,5 +33,5 @@
   en: d94a7228eac6a003
   zh: b1b055cf9cfd2397
 /dsh-plugin-lab/known-limitations-and-deferred-work:
-  en: 95a89f3ab9874847
-  zh: b3e0c7543d6d3990
+  en: 006a94ba28710e30
+  zh: 25c8f602a637bba8
