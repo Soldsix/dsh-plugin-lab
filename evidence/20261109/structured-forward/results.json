@@ -1,5 +1,5 @@
 {
-  "status": "local-verified-ci-and-release-pending",
+  "status": "development-prerelease-published-cross-platform-ci-and-anonymous-public-consumer-verified",
   "version": "0.3.0-development",
   "dsh": "0.2.2-rc.1",
   "hostMinimumNode": "24.9.0",
@@ -104,8 +104,53 @@
   "productionTouched": false,
   "automaticPatrolEnabled": false,
   "pending": [
-    "remote cross-platform CI",
-    "release and anonymous public consumer verification",
-    "QQ phone/desktop and external-write capture"
-  ]
+    "QQ phone/desktop and final platform encoding",
+    "external-write capture",
+    "remaining independent robot capabilities"
+  ],
+  "ci": {
+    "run": 42600516199,
+    "jobs": 9,
+    "conclusion": "success",
+    "sourceCommit": "162ff4bd10c4b1b83c3d7fe2533568d59e33a5d9"
+  },
+  "ciMain": {
+    "run": 42601122942,
+    "jobs": 9,
+    "conclusion": "success",
+    "sameSourceCommit": true
+  },
+  "release": {
+    "url": "https://github.com/Soldsix/dsh-plugin-lab/releases/tag/v0.3.0-development",
+    "npmPublished": false
+  },
+  "publicDownload": {
+    "passed": true,
+    "anonymous": true,
+    "githubAuthorizationSupplied": false,
+    "curlConfigDisabled": true,
+    "sha256": "be9be01fa4017108c1e9e782d5a538fbd79f48ebe92d85abdec1d34759234c7b",
+    "bytes": 90838
+  },
+  "publicConsumer": {
+    "passed": true,
+    "archiveSha256": "be9be01fa4017108c1e9e782d5a538fbd79f48ebe92d85abdec1d34759234c7b",
+    "installedFilesVerified": 63,
+    "declarationFiles": 340,
+    "ancestorDependenciesBorrowed": false,
+    "strictDeclarationErrors": 0,
+    "runtimeSmoke": {
+      "passed": true,
+      "startedApplications": 0,
+      "openedReportStores": 0
+    },
+    "realModelApiRequests": 0,
+    "realQqMessagesSent": 0
+  },
+  "publicArtifactFlagNegative": {
+    "passed": true,
+    "exitCode": 1,
+    "signal": null,
+    "noConsumerCreated": true
+  }
 }

@@ -1,6 +1,7 @@
 /** Install the public archives into a fresh consumer and verify strict NodeNext declarations. */
 import assert from 'node:assert/strict'
 import {spawn} from 'node:child_process'
+import {createHash} from 'node:crypto'
 import {mkdtemp,mkdir,readFile,writeFile,copyFile,realpath} from 'node:fs/promises'
 import {join,resolve,relative,isAbsolute,basename} from 'node:path'
 import {fileURLToPath} from 'node:url'
@@ -10,12 +11,13 @@ const root=fileURLToPath(new URL('../../',import.meta.url)),args=process.argv,in
 assert.ok(index>=0&&args[index+1],'Pass --im-kit-archive PATH');assert.ok(process.env.npm_execpath,'Run through npm run test:consumer')
 const manifest=JSON.parse(await readFile(join(root,'package.json'),'utf8')),library=await realpath(args[index+1]),jobIndex=args.indexOf('--job-archive')
 assert.ok(jobIndex>=0&&args[jobIndex+1],'Pass --job-archive PATH');const job=await realpath(args[jobIndex+1])
+const labIndex=args.indexOf('--lab-archive');assert.ok(labIndex<0||args[labIndex+1],'Pass --lab-archive PATH');const lab=await realpath(labIndex<0?join(root,'artifacts',manifest.name+'-'+manifest.version+'.tgz'):args[labIndex+1])
 const runs=join(root,'.test-artifacts','consumer');await mkdir(runs,{recursive:true})
 const resume=args.indexOf('--resume-run'),resumed=resume>=0
 const area=resumed?await realpath(args[resume+1]):await mkdtemp(join(runs,'run-'))
 const owned=relative(runs,area);assert.ok(!owned.startsWith('..')&&!isAbsolute(owned),'Resume target must stay in this repository consumer-test directory')
 const attempt=await mkdtemp(join(area,'attempt-')),archives=[]
-for(const path of[library,join(root,'artifacts',manifest.name+'-'+manifest.version+'.tgz'),job,join(root,'.test-artifacts/release-inputs/dsh-media-kit-0.2.0.tgz'),join(root,'.test-artifacts/release-inputs/dsh-qq-forward-0.1.0-development.tgz')]){const target=join(attempt,basename(path));await copyFile(path,target);archives.push(target)}
+for(const path of[library,lab,job,join(root,'.test-artifacts/release-inputs/dsh-media-kit-0.2.0.tgz'),join(root,'.test-artifacts/release-inputs/dsh-qq-forward-0.1.0-development.tgz')]){const target=join(attempt,basename(path));await copyFile(path,target);archives.push(target)}
 if(!resumed)await writeFile(join(area,'package.json'),JSON.stringify({name:'isolated-plugin-lab-consumer',private:true,type:'module',overrides:manifest.overrides},null,2)+'\n')
 const env=Object.fromEntries(Object.entries(process.env).filter(([key])=>!/KEY|SECRET|TOKEN|PASSWORD/i.test(key)))
 await mkdir(join(attempt,'temp'),{recursive:true});Object.assign(env,{NPM_CONFIG_CACHE:join(root,'.npm-cache'),TEMP:join(attempt,'temp'),TMP:join(attempt,'temp')})
@@ -27,7 +29,7 @@ async function run(argv){
  child.stdout.on('data',data=>{stdout+=data});child.stderr.on('data',data=>{stderr+=data});child.once('error',error=>{failure=error})
  const [code,signal]=await new Promise(resolve=>child.once('close',(...values)=>resolve(values)))
  records.push({argv,code,signal,timedOut:timeout.aborted,stdout,stderr});await writeFile(join(attempt,'commands.json'),JSON.stringify(records,null,2)+'\n')
- if(failure)throw failure;assert.equal(code,0,stderr.slice(-1800));return stdout
+ if(failure)throw failure;assert.equal(timeout.aborted,false);assert.equal(signal,null);assert.equal(code,0,stderr.slice(-1800));return stdout
 }
 const peers=Object.entries(manifest.peerDependencies).filter(([name])=>!['dsh-im-kit','dsh-job-delivery','dsh-qq-forward'].includes(name)).map(([name,version])=>name+'@'+version)
 if(!resumed||args.includes('--reinstall'))await run([process.env.npm_execpath,'install','--ignore-scripts','--no-audit','--no-fund','--package-lock=false','--cache',join(root,'.npm-cache'),...archives,...peers,'@deepseek-ai/dsh@0.2.2-rc.1','@types/node@24.0.0','@types/react@18.3.28','@types/react-dom@18.3.7'])
@@ -71,5 +73,5 @@ assert.ok(inject.includes('profileContext'))
 console.log(JSON.stringify({passed:true,startedApplications:0,openedReportStores:0}))
 `)
 const runtime=JSON.parse((await run([join(attempt,'runtime.mjs')])).trim());assert.equal(runtime.passed,true)
-const result={passed:true,installedFilesVerified:installed,declarationFiles:inputFiles.length,ancestorDependenciesBorrowed:false,strictDeclarationErrors:0,runtimeSmoke:runtime,realModelApiRequests:0,realQqMessagesSent:0}
+const result={passed:true,archiveSha256:createHash('sha256').update(await readFile(archives[1])).digest('hex'),installedFilesVerified:installed,declarationFiles:inputFiles.length,ancestorDependenciesBorrowed:false,strictDeclarationErrors:0,runtimeSmoke:runtime,realModelApiRequests:0,realQqMessagesSent:0}
 await writeFile(join(attempt,'result.json'),JSON.stringify(result,null,2)+'\n');console.log(JSON.stringify({area,attempt,...result}))
