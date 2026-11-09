@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-lab",
-  "version": "0.2.0-development",
+  "version": "0.3.0-development",
   "description": "Run synthetic messaging scenarios through installed DSH consumers and capture outbound messages locally.",
   "type": "module",
   "license": "MIT",
@@ -28,6 +28,10 @@
     "./job-delivery": {
       "types": "./dist/job-delivery.d.ts",
       "import": "./dist/job-delivery.js"
+    },
+    "./forward": {
+      "types": "./dist/forward.d.ts",
+      "import": "./dist/forward.js"
     }
   },
   "files": [
@@ -63,7 +67,8 @@
     "@deepseek-ai/dsh-config-editor": "0.2.2-rc.1",
     "@deepseek-ai/dsh-typert-protocol": "0.2.2-rc.1",
     "@deepseek-ai/schemastery": "~3.19.0",
-    "dsh-job-delivery": "0.2.0-development"
+    "dsh-job-delivery": "0.2.0-development",
+    "dsh-qq-forward": "0.1.0-development"
   },
   "dependencies": {
     "dsh-im-kit": "https://github.com/Soldsix/dsh-im-kit/releases/download/v0.2.1/dsh-im-kit-0.2.1.tgz",
@@ -108,13 +113,16 @@
     "@deepseek-ai/dsh-jobs-local": "0.2.2-rc.1",
     "@deepseek-ai/dsh-storage": "0.2.2-rc.1",
     "@deepseek-ai/dsh-storage-json": "0.2.2-rc.1",
-    "@deepseek-ai/dsh-storage-domain": "0.2.2-rc.1"
+    "@deepseek-ai/dsh-storage-domain": "0.2.2-rc.1",
+    "dsh-qq-forward": "https://github.com/Soldsix/dsh-qq-forward/releases/download/v0.1.0-development/dsh-qq-forward-0.1.0-development.tgz"
   },
   "overrides": {
     "zod": "4.6.6",
     "undici": "8.12.2",
     "fflate": "0.8.3",
-    "@modelcontextprotocol/client": "2.3.0"
+    "@modelcontextprotocol/client": "2.3.0",
+    "dsh-im-kit": "$dsh-im-kit",
+    "dsh-media-kit": "$dsh-media-kit"
   },
   "scripts": {
     "build": "tsc -p tsconfig.host.json && tsc -p tsconfig.client.json && node scripts/build-client.mjs",
@@ -138,6 +146,9 @@
   },
   "peerDependenciesMeta": {
     "dsh-job-delivery": {
+      "optional": true
+    },
+    "dsh-qq-forward": {
       "optional": true
     }
   }

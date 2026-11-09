@@ -5,6 +5,7 @@ import {verifyManifest,verifyFiles,verifyPair,verifyText,verifyCompiledSources,v
 test('publication gates refuse private dependencies, launchers and fixture evidence',async()=>{
  const manifest=JSON.parse(await readFile(new URL('../package.json',import.meta.url),'utf8'));verifyManifest(manifest)
  assert.throws(()=>verifyManifest({...manifest,bin:'dist/index.js'}))
+ assert.throws(()=>verifyManifest({...manifest,peerDependenciesMeta:{...manifest.peerDependenciesMeta,'dsh-qq-forward':{optional:false}}}));const missing=structuredClone(manifest);delete missing.exports['./forward'];assert.throws(()=>verifyManifest(missing))
  assert.throws(()=>verifyManifest({...manifest,dependencies:{...manifest.dependencies,'dsh-im-kit':'^0.2.1'}}))
  assert.throws(()=>verifyManifest({...manifest,dependencies:{hidden:'file:../production'}}))
  assert.throws(()=>verifyFiles(['data/history.sqlite3']))

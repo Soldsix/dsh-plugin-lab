@@ -35,5 +35,14 @@ export const releaseInputs=[
     "tag": "v0.2.0-development",
     "file": "dsh-job-delivery-0.2.0-development.tgz",
     "url": "https://github.com/Soldsix/dsh-job-delivery/releases/download/v0.2.0-development/dsh-job-delivery-0.2.0-development.tgz"
-  }
+  },
+{
+  "name": "dsh-qq-forward",
+  "version": "0.1.0-development",
+  "sha256": "d5cc02d366d44bb0e7a2cb874c3de43a4397ebc44c0ec0fd6abd82ccccc8c5f5",
+  "repository": "Soldsix/dsh-qq-forward",
+  "tag": "v0.1.0-development",
+  "file": "dsh-qq-forward-0.1.0-development.tgz",
+  "url": "https://github.com/Soldsix/dsh-qq-forward/releases/download/v0.1.0-development/dsh-qq-forward-0.1.0-development.tgz"
+}
 ]

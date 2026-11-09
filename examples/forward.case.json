@@ -1,0 +1,115 @@
+{
+  "title": "Complete synthetic forward",
+  "actors": [
+    "alice",
+    "bob"
+  ],
+  "conversations": [
+    {
+      "id": "lounge",
+      "kind": "group"
+    }
+  ],
+  "assets": [
+    {
+      "id": "pixel",
+      "base64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a/1UAAAAASUVORK5CYII=",
+      "fileName": "original.jpg"
+    },
+    {
+      "id": "motion",
+      "base64": "R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7",
+      "fileName": "original.gif"
+    },
+    {
+      "id": "file",
+      "base64": "RVhBQ1RfSFRNTF9PUklHSU5BTA==",
+      "fileName": "original.html",
+      "textMime": "text/html"
+    }
+  ],
+  "stages": [
+    {
+      "inputs": [
+        {
+          "id": "quoted",
+          "actor": "alice",
+          "conversation": "lounge",
+          "text": "QUOTED_INPUT_EXACT",
+          "directed": false
+        }
+      ]
+    },
+    {
+      "inputs": [
+        {
+          "id": "forwarded",
+          "actor": "bob",
+          "conversation": "lounge",
+          "text": "Read and send this complete forward",
+          "directed": true,
+          "content": [
+            {
+              "provider": "qq-forward",
+              "value": {
+                "nodes": [
+                  {
+                    "actor": "alice",
+                    "sourceId": "inner",
+                    "parts": [
+                      {
+                        "type": "text",
+                        "text": "FORWARD_EXACT <script>never execute</script>"
+                      },
+                      {
+                        "type": "image",
+                        "asset": "pixel"
+                      },
+                      {
+                        "type": "forward",
+                        "resource": "child"
+                      },
+                      {
+                        "type": "reply-input",
+                        "input": "quoted"
+                      }
+                    ]
+                  },
+                  {
+                    "actor": "bob",
+                    "parts": [
+                      {
+                        "type": "reply-node",
+                        "node": "inner"
+                      }
+                    ]
+                  }
+                ],
+                "resources": [
+                  {
+                    "id": "child",
+                    "nodes": [
+                      {
+                        "actor": "bob",
+                        "parts": [
+                          {
+                            "type": "image",
+                            "asset": "motion"
+                          },
+                          {
+                            "type": "file",
+                            "asset": "file"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

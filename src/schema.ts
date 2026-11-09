@@ -3,6 +3,7 @@ import {z} from 'zod'
 import {brandString} from '@deepseek-ai/dsh-brand'
 import {identifier} from 'dsh-im-kit'
 import {backgroundProviderId,backgroundTaskId} from './background.ts'
+import {contentSourceSchema,contentProviderSchema,capturedContentSchema} from './content-schema.ts'
 import {grantSchema,originalSchema} from './media-schema.ts'
 import type {Spec} from './config.ts'
 import type {RunId,Scenario,JournalEvent} from './types.ts'
@@ -12,7 +13,9 @@ const alias=z.string().regex(/^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/)
 export const runIdSchema=z.string().regex(/^[a-z0-9][a-z0-9_-]{15,79}$/).transform(value=>brandString<RunId>(value))
 const input=z.object({id:alias,actor:alias,conversation:alias,text:z.string(),directed:z.boolean(),mentionActor:alias.optional(),replyTo:alias.optional(),replyToOutput:z.object({stage:z.number().int().nonnegative().safe(),index:z.number().int().nonnegative().safe()}).strict().optional(),media:z.array(z.object({type:z.enum(['image','audio','video','file']),asset:alias}).strict()).min(1).optional(),card:z.object({format:z.enum(['json','xml']),content:z.string().min(1)}).strict().optional()}).strict()
 /** Pure scenario representation before deployment-specific limits and referent checks. */
-export const scenarioSchema=z.object({title:z.string().min(1).max(200),assets:z.array(z.object({id:alias,fileName:z.string().min(1).max(255).refine(value=>!/[\\/:\u0000-\u001f\u007f]/u.test(value)&&value!=='.'&&value!=='..'),base64:z.string().min(1),textMime:z.enum(['text/plain','text/html','application/json']).optional(),unclassified:z.boolean().optional()}).strict()).optional(),actors:z.array(alias).min(1),conversations:z.array(z.object({id:alias,kind:z.enum(['group','private'])}).strict()).min(1),stages:z.array(z.object({inputs:z.array(input).min(1)}).strict()).min(1)}).strict()
+const legacyScenarioSchema=z.object({title:z.string().min(1).max(200),assets:z.array(z.object({id:alias,fileName:z.string().min(1).max(255).refine(value=>!/[\\/:\u0000-\u001f\u007f]/u.test(value)&&value!=='.'&&value!=='..'),base64:z.string().min(1),textMime:z.enum(['text/plain','text/html','application/json']).optional(),unclassified:z.boolean().optional()}).strict()).optional(),actors:z.array(alias).min(1),conversations:z.array(z.object({id:alias,kind:z.enum(['group','private'])}).strict()).min(1),stages:z.array(z.object({inputs:z.array(input).min(1)}).strict()).min(1)}).strict()
+/** New structured sources are written only under header generation 3. */
+export const scenarioSchema=legacyScenarioSchema.extend({stages:z.array(z.strictObject({inputs:z.array(input.extend({content:z.array(contentSourceSchema).min(1).optional()})).min(1)})).min(1)})
 
 /**
  * Validate an external test case before opening its journal or publishing messages.
@@ -38,7 +41,8 @@ export function parseScenario(value:unknown,config:Spec):Scenario{
   if(stage.inputs.length>config.maxInputsPerStage)throw new Error('Lab stage exceeds configured capacity')
   for(const entry of stage.inputs){
    if(inputs.has(entry.id)||!actors.has(entry.actor)||!conversations.has(entry.conversation)||(entry.mentionActor&&!actors.has(entry.mentionActor)))throw new Error('Lab scenario reference is invalid')
-   if(entry.text.length+(entry.card?.content.length??0)>config.maxTextChars||(!entry.text.trim()&&!entry.card&&!entry.media?.length))throw new Error('Lab input exceeds configured limit')
+   if(entry.text.length+(entry.card?.content.length??0)>config.maxTextChars||(!entry.text.trim()&&!entry.card&&!entry.media?.length&&!entry.content?.length))throw new Error('Lab input exceeds configured limit')
+   if(entry.content&&(entry.content.length>config.maxContentPerInput||new Set(entry.content.map(value=>value.provider)).size!==entry.content.length||Buffer.byteLength(JSON.stringify(entry.content))>config.maxRecordBytes))throw new Error('Lab structured source exceeds configured capacity')
    if(entry.media&&(entry.media.length>config.maxMediaReferences||entry.media.some(value=>!assets.has(value.asset))))throw new Error('Lab media source reference is invalid')
    if(entry.replyToOutput&&(entry.replyTo!==undefined||entry.replyToOutput.stage>=stageIndex))throw new Error('Lab output quote must select only an earlier stage')
    if(entry.replyTo&&priorConversations.get(entry.replyTo)!==entry.conversation)throw new Error('Lab quote must target an input from an earlier stage in the same conversation')
@@ -60,11 +64,13 @@ const part=z.discriminatedUnion('type',[
  z.object({type:z.literal('card'),format:z.enum(['json','xml']),content:z.string()}).strict(),
  z.object({type:z.literal('unsupported'),segmentType:z.string()}).strict(),
 ])
-const result=z.object({runId:runIdSchema,phase:z.enum(['completed','cancelled','failed','unfinished']),replayed:z.boolean(),inputCount:z.number().int().nonnegative(),consumerFailures:z.number().int().nonnegative(),unhandledInputs:z.number().int().nonnegative(),captureCount:z.number().int().nonnegative(),unresolvedMedia:z.number().int().nonnegative(),failure:z.enum(['capacity','cancelled','consumer-failed','no-consumer','journal-unavailable','journal-limit','journal-invalid','invalid-scenario','source-conflict','closed','media-unavailable','media-invalid','media-failed','background-failed','background-unresolved','background-unavailable','background-limit']).nullable()}).strict()
+const result=z.object({runId:runIdSchema,phase:z.enum(['completed','cancelled','failed','unfinished']),replayed:z.boolean(),inputCount:z.number().int().nonnegative(),consumerFailures:z.number().int().nonnegative(),unhandledInputs:z.number().int().nonnegative(),captureCount:z.number().int().nonnegative(),unresolvedMedia:z.number().int().nonnegative(),failure:z.enum(['capacity','cancelled','consumer-failed','no-consumer','journal-unavailable','journal-limit','journal-invalid','invalid-scenario','source-conflict','closed','media-unavailable','media-invalid','media-failed','background-failed','background-unresolved','background-unavailable','background-limit','content-unavailable','content-invalid','content-limit']).nullable()}).strict()
 /** File events have a fixed monotonic schema and validate before becoming operator observations. */
 export const eventSchema:z.ZodType<JournalEvent>=z.union([
- z.object({type:z.literal('created'),schema:z.literal(1),runId:runIdSchema,scenario:scenarioSchema,fingerprint:z.string().regex(/^[a-f0-9]{64}$/),time:z.number().int().nonnegative()}).strict(),
- z.object({type:z.literal('created'),schema:z.literal(2),runId:runIdSchema,scenario:scenarioSchema,fingerprint:z.string().regex(/^[a-f0-9]{64}$/),time:z.number().int().nonnegative(),backgroundProviders:z.array(z.string().transform(backgroundProviderId)),requiredBackgroundProviders:z.array(z.string().transform(backgroundProviderId))}).strict(),
+ z.strictObject({type:z.literal('created'),schema:z.literal(3),runId:runIdSchema,scenario:scenarioSchema,fingerprint:z.string().regex(/^[a-f0-9]{64}$/),time:z.number().int().nonnegative(),backgroundProviders:z.array(z.string().transform(backgroundProviderId)),requiredBackgroundProviders:z.array(z.string().transform(backgroundProviderId)),contentProviders:z.array(contentProviderSchema)}),
+ z.strictObject({type:z.literal('content'),content:capturedContentSchema,time:z.number().int().nonnegative()}),
+ z.object({type:z.literal('created'),schema:z.literal(1),runId:runIdSchema,scenario:legacyScenarioSchema,fingerprint:z.string().regex(/^[a-f0-9]{64}$/),time:z.number().int().nonnegative()}).strict(),
+ z.object({type:z.literal('created'),schema:z.literal(2),runId:runIdSchema,scenario:legacyScenarioSchema,fingerprint:z.string().regex(/^[a-f0-9]{64}$/),time:z.number().int().nonnegative(),backgroundProviders:z.array(z.string().transform(backgroundProviderId)),requiredBackgroundProviders:z.array(z.string().transform(backgroundProviderId))}).strict(),
  z.object({type:z.literal('input'),inputId:alias,time:z.number().int().nonnegative()}).strict(),
  z.object({type:z.literal('dispatch'),inputId:alias,report:z.object({accepted:z.number().int().nonnegative(),failed:z.number().int().nonnegative()}).strict(),time:z.number().int().nonnegative()}).strict(),
  z.object({type:z.literal('capture'),capture:z.object({operationId:z.string().min(1),conversation:alias,kind:z.enum(['group','private']),parts:z.array(part),messageId:z.string().min(1),originals:z.array(originalSchema).optional()}).strict(),time:z.number().int().nonnegative()}).strict(),

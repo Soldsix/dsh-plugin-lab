@@ -1,0 +1,10 @@
+{
+  "passed": true,
+  "allRuntimeJavaScriptIdentical": true,
+  "changedNonRuntimeFiles": [
+    "package/README.zh.md",
+    "package/dist/schema.d.ts",
+    "package/dist/types.d.ts",
+    "package/README.i18n.yaml"
+  ]
+}

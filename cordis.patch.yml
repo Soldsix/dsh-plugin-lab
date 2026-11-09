@@ -4,6 +4,9 @@
     - id: plugin-lab-job-delivery
       name: dsh-plugin-lab/job-delivery
       disabled: true
+    - id: plugin-lab-forward
+      name: dsh-plugin-lab/forward
+      disabled: true
     - id: plugin-lab-runtime
       name: dsh-plugin-lab
       config:

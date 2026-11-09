@@ -42,6 +42,7 @@ jobs:
             .test-artifacts/**/installation.json
             .test-artifacts/**/commands.json
             .test-artifacts/**/result.json
+          include-hidden-files: true
           if-no-files-found: ignore
           retention-days: 7
   native:
@@ -78,6 +79,7 @@ jobs:
             .test-artifacts/**/installation.json
             .test-artifacts/**/commands.json
             .test-artifacts/**/result.json
+          include-hidden-files: true
           if-no-files-found: ignore
           retention-days: 7
   web:
@@ -108,5 +110,6 @@ jobs:
             .test-artifacts/**/installation.json
             .test-artifacts/**/commands.json
             .test-artifacts/**/result.json
+          include-hidden-files: true
           if-no-files-found: ignore
           retention-days: 7

@@ -8,7 +8,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Exercise staged conversations with synthetic identities, retain complete source cases before computation, and capture structured outbound messages locally. Native owner controls manage background cases and original downloads. Optional media preserves exact images, audio, video and files through scoped native attachments, with browser uploads and previews. Installed consumers supply models and tools. Optional durable-job observation waits for final outcomes and cleanup. Merged forwards and external-write capture remain pending.
+Exercise staged conversations with synthetic identities, retain complete source cases before computation, and capture structured outbound messages locally. Native owner controls manage background cases and original downloads. Optional media preserves exact images, audio, video and files through scoped native attachments, with browser uploads and previews. Installed consumers supply models and tools. Optional durable-job observation waits for final outcomes and cleanup. An optional forward resolver retains nested graphs, quotes and original mappings. External-write capture remains pending.
 
 ## Table of Contents
 
@@ -40,7 +40,13 @@ The optional dsh-plugin-lab/job-delivery component requires dsh-job-delivery 0.2
 
 Every stage waits for its newly admitted tasks and actual worker cleanup before a later stage can quote the captured output. Reports retain selected and required observer IDs and complete task-state counts without task input bodies. Missing observers fail before dispatch. Failed, cancelled and uncertain outcomes remain explicit; no automatic retries or generation replay occur. Cancellation stops and joins owned work before capture closes. Only exact synthetic run scopes may be observed, and preexisting tasks are refused without mutation.
 
-maxBackgroundProviders and maxBackgroundTasks bound registrations and per-case observations. requiredBackgroundProviders is a comma-separated list of installed IDs. Custom Host observers use registerBackground and provide stage settlement plus joined cleanup. They must admit child work before their own completion; detached work started after completion is outside this guarantee. New reports use schema 2; immutable schema-1 reports remain readable without replay or migration. See the [upgrade guide](https://github.com/Soldsix/dsh-plugin-lab/blob/main/docs/upgrade-guide/v0.1.0-development/background-capture/guide.md).
+maxBackgroundProviders and maxBackgroundTasks bound registrations and per-case observations. requiredBackgroundProviders is a comma-separated list of installed IDs. Custom Host observers use registerBackground and provide stage settlement plus joined cleanup. They must admit child work before their own completion; detached work started after completion is outside this guarantee. New reports use schema 3; immutable schema-1 and schema-2 reports remain readable without replay or migration. See the [upgrade guide](https://github.com/Soldsix/dsh-plugin-lab/blob/main/docs/upgrade-guide/v0.1.0-development/background-capture/guide.md).
+
+Structured forward cases additionally install dsh-qq-forward 0.1.0-development and enable plugin-lab-forward with config.enabled=true; the default row is disabled. Its provider field defaults to qq-forward. Enable the separate qq-forward core, native storage/attachments and lab media. The source example in [examples/forward.case.json](examples/forward.case.json) uses synthetic actors, inline original assets, nested resources, internal node quotes and earlier-input quotes. RunContent passes normalized messages to the same IM consumers; the optional adapter uses the installed forward core instead of a second graph implementation.
+
+Each input can add content entries with a provider ID and complete JSON value. The forward format accepts nodes and optional named resources; nodes have actor, optional display name/sourceId and ordered text, mention, media asset, forward, inline-forward, reply-input or reply-node parts. Aliases resolve only inside this synthetic run. New content records retain the document, completeness and original-handle mapping before local acceptance. The owner page provides bounded escaped document previews and complete original downloads; the JSONL export keeps the entire graph. Missing providers, invalid sources, ambiguous resolvers and capacity failures stay explicit. See the [upgrade guide](docs/upgrade-guide/v0.2.0-development/content-capture/guide.md).
+
+maxContentProviders, maxContentPerInput and maxArtifactsPerCapture bound installed resolvers and each message. Existing record/report and media limits also apply; originals are not resized or re-encoded. Custom Host providers use registerContent and implement scoped input conversion, quote observation, output capture and joined close. Removing a resolver cancels and joins its cases before releasing the source provider. It neither installs a live QQ sender nor grants filesystem/URL access to source JSON.
 
 <a id="current-use-and-scope"></a>
 ## Current use and scope
@@ -53,7 +59,7 @@ Install the development release in a dedicated profile, then install the consume
 
 ```sh
 dsh --profile qq-lab --from-default-profile web --dump-config
-dsh plugin --profile qq-lab add https://github.com/Soldsix/dsh-plugin-lab/releases/download/v0.2.0-development/dsh-plugin-lab-0.2.0-development.tgz
+dsh plugin --profile qq-lab add ./artifacts/dsh-plugin-lab-0.3.0-development.tgz
 dsh --profile qq-lab --no-open
 ```
 
@@ -87,7 +93,7 @@ The source representation separates actor aliases, conversation aliases and stag
 
 The normal consumer decides whether to answer. A `completed` result means the admitted stages settled; it is not a semantic-quality verdict, proof of a successful model turn, or QQ delivery verification. Captures preserve structured text, mentions, reply IDs and opaque media references. `unresolvedMedia` counts references that still lack final byte materialization.
 
-An input can quote an earlier input with `replyTo`, or an earlier captured bot output with `replyToOutput: {"stage": 0, "index": 0}`; never both. Stage and output indexes start at zero. The output index selects only the same conversation in durable capture order during that stage, not a particular input or another conversation. Concurrent/future selectors fail before execution; if the selected earlier output does not exist, the run retains its source and fails before publishing the dependent input. One `{format, content}` card can retain original JSON/XML and share the text capacity with the body. An empty text body requires a card or media; the installed consumer owns parsing, search and page access.
+An input can quote an earlier input with `replyTo`, or an earlier captured bot output with `replyToOutput: {"stage": 0, "index": 0}`; never both. Stage and output indexes start at zero. The output index selects only the same conversation in durable capture order during that stage, not a particular input or another conversation. Concurrent/future selectors fail before execution; if the selected earlier output does not exist, the run retains its source and fails before publishing the dependent input. One `{format, content}` card can retain original JSON/XML and share the text capacity with the body. An empty text body requires a card, media or structured content; the installed consumer owns parsing, search and page access.
 
 <a id="original-media"></a>
 ## Original media
@@ -139,7 +145,7 @@ An asset has `id`, `fileName`, complete canonical `base64`, optional `textMime` 
 
 `maxMediaItemBytes`, `maxMediaBytes`, `maxMediaReferences`, `maxMediaOperations`, `maxMediaDimension`, `maxMediaPixels`, `mediaChunkBytes` and `allowedMediaMimeTypes` are editable capacities. Source-byte sums and unique stored originals each obey the total byte limit. Base64 occupies more space than the original: record/report limits also apply to the complete retained source, independently of media limits. Capacity failures preserve the caller draft and never truncate media.
 
-The owner page lists bounded retained originals with size, MIME, dimensions and hash. Image previews use original encoded bytes; audio/video controls request the same bytes. Download original performs complete integrity verification before returning bytes; HTML and other files use attachment responses. Media reads and active writers block conflicting configuration changes. Reports retain native grants for later downloads without rerunning a case. Opaque forwards remain unresolved; `unresolvedMedia` excludes only output parts whose exact original was actually materialized and recorded.
+The owner page lists bounded retained originals with size, MIME, dimensions and hash. Image previews use original encoded bytes; audio/video controls request the same bytes. Download original performs complete integrity verification before returning bytes; HTML and other files use attachment responses. Media reads and active writers block conflicting configuration changes. Reports retain native grants for later downloads without rerunning a case. Forwards resolved by the optional content provider retain their complete document and scoped original mapping. An unresolved or incomplete forward still contributes to `unresolvedMedia`; opaque references never count as verified content.
 
 The lab does not recognize images, transcribe speech, synthesize voice or generate pictures itself. Install a consumer that reads `ctx.imMedia` and returns output through the normal IM service. Its configured model and tool calls still execute; only declared local message/media outputs are captured. The profile owner controls original downloads through the same authenticated native connection as report downloads.
 
@@ -160,5 +166,5 @@ This package registers no model tool and does not add a prompt or request its ow
 
 - Local tests cover original media, three concurrent 15-actor cases, owner permissions, cancellation, durable background cases, original downloads and browser upload/preview/decode. Actual installed-job cases additionally cover admission-only producers, output quotes and joined cancellation. They do not prove natural dialogue, OCR identity accuracy, synthesis quality or complete application behavior.
 - Earlier real DeepSeek text smokes cover context recall, arithmetic and retained public replies. This media checkpoint uses controlled local model fixtures and real native attachment APIs, not new upstream model calls. Repository CI exercises Windows/Linux packages and native profiles plus Linux Web; Desktop and real QQ delivery remain unverified.
-- Merged forwards, final QQ encoding, captured platform writes need additional adapters. Arbitrary trusted Host code is not sandboxed, and this package does not silently block or capture its direct external writes.
+- Unresolved forwards, final QQ encoding, captured platform writes need additional adapters. Arbitrary trusted Host code is not sandboxed, and this package does not silently block or capture its direct external writes.
 - Owner reports retain full source text, source bytes and native receipts locally without encryption. Control operations and downloads reject non-owners even with global Remote permissions. Core Host hot-replacement limits documented by Chat also apply.

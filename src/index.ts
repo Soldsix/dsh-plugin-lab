@@ -10,6 +10,8 @@ import {Config,resolveConfig} from './config.ts'
 import {LabEngine} from './engine.ts'
 export {Config,resolveConfig}
 export type * from './types.ts'
+export type * from './content.ts'
+export {contentProviderId} from './content.ts'
 export type * from './background.ts'
 export {backgroundProviderId,backgroundTaskId} from './background.ts'
 export type {ReportStream} from './report-stream.ts'

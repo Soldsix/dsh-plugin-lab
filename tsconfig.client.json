@@ -27,6 +27,7 @@
     "src/control-codecs.ts",
     "src/types.ts",
     "src/media-input.ts",
-    "src/background-types.ts"
+    "src/background-types.ts",
+    "src/content-types.ts"
   ]
 }

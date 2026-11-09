@@ -1,0 +1,111 @@
+{
+  "status": "local-verified-ci-and-release-pending",
+  "version": "0.3.0-development",
+  "dsh": "0.2.2-rc.1",
+  "hostMinimumNode": "24.9.0",
+  "unitTests": {
+    "node22": 85,
+    "node24": 85
+  },
+  "checks": {
+    "sdk": {
+      "passed": true,
+      "checks": [
+        "installed-lab-publishes-through-native-chat-and-captures-final-public-output",
+        "repeated-lab-run-does-not-submit-another-model-turn",
+        "installed-native-owner-control-inspects-lists-and-replays-without-new-model-work",
+        "all-seven-native-owner-operations-reject-non-owner-even-with-global-policy",
+        "native-connection-authenticates-streaming-report-downloads-before-dispatch",
+        "native-revisions-and-scenario-authority-validation-before-admission",
+        "parallel-lab-runs-use-independent-native-conversations",
+        "fifteen-synthetic-actors-traverse-real-chat-queues-and-persist-captures",
+        "lab-cancellation-joins-native-model-and-following-run-recovers",
+        "native-consumer-receives-original-platform-card-and-a-prior-message-quote-without-duplicate-model-calls",
+        "generated-output-quote-reaches-native-chat-with-exact-receipt-id-and-no-replay",
+        "native-media-inputs-and-generated-output-retain-verbatim-bytes-with-owner-only-downloads-and-no-model-call-or-replay",
+        "installed-background-job-adapter-retains-queued-text-before-cross-participant-output-quote-without-replay",
+        "installed-background-producer-checkpoints-capture-and-owner-download-keep-exact-png-and-wav-originals",
+        "native-cancel-joins-actual-background-producer-cleanup-while-sibling-case-finishes",
+        "installed-forward-core-and-resolver-retain-nested-quotes-originals-and-owner-previews-without-replay-or-model-call",
+        "native-full-report-export-retains-all-structured-captures"
+      ],
+      "installedFiles": {
+        "forward": 50,
+        "job": 34,
+        "media": 25,
+        "chat": 58,
+        "lab": 63
+      },
+      "nativeAdapterRequests": 25,
+      "peak": 2,
+      "normalShutdown": true,
+      "realQqMessagesSent": 0,
+      "realModelApiRequests": 0,
+      "semanticQualityVerified": false
+    },
+    "web": {
+      "passed": true,
+      "checks": [
+        "native-page-loads-while-runtime-disabled-without-model-probe",
+        "native-save-enables-dedicated-local-runtime",
+        "invalid-save-and-status-poll-retain-unsaved-drafts",
+        "native-synthetic-stages-use-chat-model-and-capture-public-replies",
+        "native-owner-route-downloads-exact-original-jsonl-without-reasoning",
+        "scenario-cannot-choose-a-live-messaging-destination",
+        "admitted-case-survives-browser-reload-without-replay",
+        "held-case-does-not-block-another-conversation",
+        "explicit-cancel-joins-http-and-preserves-report",
+        "file-read-race-retains-the-newer-case-draft",
+        "browser-selected-4k-gif-and-wav-originals-traverse-native-consumer-preview-decode-and-exact-downloads",
+        "disabling-new-media-keeps-retained-original-downloads",
+        "original-media-report-survives-reload-without-another-model-call",
+        "native-web-case-waits-real-background-jobs-and-quotes-their-captured-output",
+        "native-forward-source-nested-quote-original-downloads-and-structured-preview-survive-reload-without-model-call",
+        "native-light-dark-and-narrow-layout",
+        "native-restart-retains-reports-and-disabled-runtime-keeps-controls"
+      ],
+      "installedFilesVerified": {
+        "forward": 50,
+        "job": 34,
+        "media": 25,
+        "chat": 58,
+        "lab": 63
+      },
+      "nativeAdapterRequests": 4,
+      "peak": 2,
+      "clientErrors": [],
+      "consoleErrors": [],
+      "realQqMessagesSent": 0,
+      "realModelApiRequests": 0
+    },
+    "consumer": {
+      "passed": true,
+      "installedFilesVerified": 63,
+      "declarationFiles": 340,
+      "ancestorDependenciesBorrowed": false,
+      "strictDeclarationErrors": 0,
+      "runtimeSmoke": {
+        "passed": true,
+        "startedApplications": 0,
+        "openedReportStores": 0
+      },
+      "realModelApiRequests": 0,
+      "realQqMessagesSent": 0
+    }
+  },
+  "archiveSha256": "be9be01fa4017108c1e9e782d5a538fbd79f48ebe92d85abdec1d34759234c7b",
+  "archiveBytes": 90838,
+  "freshPublicLockNpmCi": true,
+  "legacyFixturesUnmodified": true,
+  "newLegacyGenerationTwoFixture": true,
+  "modelApiRequests": 0,
+  "qqMessages": 0,
+  "bilibiliWrites": 0,
+  "productionTouched": false,
+  "automaticPatrolEnabled": false,
+  "pending": [
+    "remote cross-platform CI",
+    "release and anonymous public consumer verification",
+    "QQ phone/desktop and external-write capture"
+  ]
+}

@@ -14,7 +14,7 @@ export function verifyManifest(manifest){
  assert.equal(manifest.name,'dsh-plugin-lab');assert.equal(manifest.type,'module');assert.equal(manifest.license,'MIT');assert.ok(!manifest.bin)
  assert.equal(manifest.engines?.dsh,'0.2.2-rc.1');assert.equal(manifest.dependencies?.['dsh-im-kit'],'https://github.com/Soldsix/dsh-im-kit/releases/download/v0.2.1/dsh-im-kit-0.2.1.tgz');assert.equal(manifest.dependencies?.['dsh-media-kit'],'https://github.com/Soldsix/dsh-media-kit/releases/download/v0.2.0/dsh-media-kit-0.2.0.tgz');assert.equal(manifest.dsh?.bundle?.patch,'./cordis.patch.yml')
  assert.equal(manifest.exports?.['.']?.import,'./dist/index.js');assert.equal(manifest.exports?.['./control']?.import,'./dist/control.js');assert.equal(manifest.exports?.['./client']?.default,'./dist/client.js');assert.equal(manifest.dsh?.client?.platform,'web')
- assert.equal(manifest.exports?.['./job-delivery']?.import,'./dist/job-delivery.js');assert.equal(manifest.peerDependencies?.['dsh-job-delivery'],'0.2.0-development');assert.equal(manifest.peerDependenciesMeta?.['dsh-job-delivery']?.optional,true)
+ assert.equal(manifest.exports?.['./forward']?.import,'./dist/forward.js');assert.equal(manifest.peerDependenciesMeta?.['dsh-qq-forward']?.optional,true);assert.equal(manifest.peerDependencies?.['dsh-qq-forward'],'0.1.0-development');assert.equal(manifest.exports?.['./job-delivery']?.import,'./dist/job-delivery.js');assert.equal(manifest.peerDependencies?.['dsh-job-delivery'],'0.2.0-development');assert.equal(manifest.peerDependenciesMeta?.['dsh-job-delivery']?.optional,true)
  for(const section of ['dependencies','peerDependencies','devDependencies'])for(const [key,value]of Object.entries(manifest[section]??{}))assert.ok(!/^(?:file:|link:|workspace:|[a-z]:[\\/]|[\\/])/i.test(value),'Nonportable dependency '+key)
 }
 /**
@@ -40,7 +40,7 @@ export function verifyPair(english,chinese){
 export function verifyFiles(paths){
  const exact=['LICENSE','README.md','README.zh.md','README.i18n.yaml','package.json','cordis.patch.yml']
  for(const path of paths)assert.ok(exact.includes(path)||/^dist\/(?:client\/)?[a-z][a-z-]*\.(?:js|d\.ts)$/.test(path),'Unexpected public file '+path)
- for(const path of [...exact,'dist/index.js','dist/index.d.ts','dist/control.js','dist/control.d.ts','dist/client.js','dist/client/index.d.ts'])assert.ok(paths.includes(path),'Missing public file '+path)
+ for(const path of [...exact,'dist/index.js','dist/index.d.ts','dist/control.js','dist/control.d.ts','dist/client.js','dist/client/index.d.ts','dist/forward.js','dist/forward.d.ts'])assert.ok(paths.includes(path),'Missing public file '+path)
 }
 /** @param paths - actual packed file identities. @param sourcePaths - current source modules. */
 export function verifyCompiledSources(paths,sourcePaths){
@@ -68,7 +68,8 @@ async function main(){
  const root=fileURLToPath(new URL('../',import.meta.url)),manifest=JSON.parse(await readFile(resolve(root,'package.json'),'utf8'));verifyManifest(manifest)
  verifyPair(await readFile(resolve(root,'README.md'),'utf8'),await readFile(resolve(root,'README.zh.md'),'utf8'))
  const guide=resolve(root,'docs/upgrade-guide/v0.1.0-development/background-capture');verifyGuide(await readFile(resolve(guide,'guide.md'),'utf8'),await readFile(resolve(guide,'guide.zh.md'),'utf8'))
- const patch=parse(await readFile(resolve(root,'cordis.patch.yml'),'utf8'));assert.deepEqual(patch,[{insert:[{id:'plugin-lab-control',name:'dsh-plugin-lab/control'},{id:'plugin-lab-job-delivery',name:'dsh-plugin-lab/job-delivery',disabled:true},{id:'plugin-lab-runtime',name:'dsh-plugin-lab',config:{enabled:false}}]}])
+ const contentGuide=resolve(root,'docs/upgrade-guide/v0.2.0-development/content-capture');verifyGuide(await readFile(resolve(contentGuide,'guide.md'),'utf8'),await readFile(resolve(contentGuide,'guide.zh.md'),'utf8'))
+ const patch=parse(await readFile(resolve(root,'cordis.patch.yml'),'utf8'));assert.deepEqual(patch,[{insert:[{id:'plugin-lab-control',name:'dsh-plugin-lab/control'},{id:'plugin-lab-job-delivery',name:'dsh-plugin-lab/job-delivery',disabled:true},{id:'plugin-lab-forward',name:'dsh-plugin-lab/forward',disabled:true},{id:'plugin-lab-runtime',name:'dsh-plugin-lab',config:{enabled:false}}]}])
  for(const path of await sources(resolve(root,'src'))){const text=await readFile(path,'utf8');verifyText(text,path);assert.ok(text.startsWith('/**'),'Module documentation missing')}
  assert.match(await readFile(resolve(root,'dist/client.js'),'utf8'),/Copyright \(c\) 2025 Colin McDonnell/)
  assert.ok(process.env.npm_execpath,'Run through npm run check')

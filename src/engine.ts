@@ -6,6 +6,7 @@ import {readNativeOriginal} from 'dsh-media-kit/dsh-attachments'
 import {z} from 'zod'
 import {mediaStorage} from './config.ts'
 import {RunMedia,type LabMediaServices} from './media.ts'
+import {RunContent,type ContentProvider,type ContentProviderId,type ContentRun} from './content.ts'
 import type {Spec} from './config.ts'
 import type {RunId,Scenario,ScenarioInput,RunResult,FailureCode,StoredRun,RunAdmission,EngineStatus,RunPage,Capture} from './types.ts'
 import type {ReportStream} from './report-stream.ts'
@@ -18,6 +19,7 @@ import {backgroundFailure,type BackgroundProvider,type BackgroundProviderId,type
 
 const request=z.object({runId:runIdSchema,scenario:z.unknown()}).strict()
 interface Active{readonly digest:string;readonly controller:AbortController;readonly done:Promise<RunResult>;readonly admission:Promise<RunAdmission>}
+interface ContentRegistration{readonly provider:ContentProvider;readonly runs:Set<RunId>;closing:boolean;disposal?:Promise<void>}
 interface BackgroundRegistration{readonly provider:BackgroundProvider;readonly runs:Set<RunId>;closing:boolean;disposal?:Promise<void>}
 
 /** The engine never implements a second model runner or sends a live QQ request. */
@@ -27,6 +29,7 @@ export class LabEngine{
  private readonly journals=new Map<RunId,RunJournal>()
  private readonly mediaReads=new Set<Promise<OriginalMedia>>()
  private readonly backgrounds=new Map<BackgroundProviderId,BackgroundRegistration>()
+ private readonly contents=new Map<ContentProviderId,ContentRegistration>()
  private lastFailure:EngineStatus['lastFailure']=null
  private stopping:Promise<void>|undefined
  private constructor(private readonly config:Spec,private readonly im:ImRuntime,private readonly media:LabMediaServices|undefined){}
@@ -41,12 +44,18 @@ export class LabEngine{
  /** Actual parsed operator revision, before profile-local storage resolution. */
  get configRevision():string{return this.config.operatorRevision}
  /** @returns active identities, shutdown state and safe failure metadata without source bodies. */
- status():EngineStatus{return{active:this.active.size,activeRunIds:[...this.active.keys()],backgroundProviders:[...this.backgrounds.keys()].sort(),stopping:this.lifetime.signal.aborted,lastFailure:this.lastFailure}}
+ status():EngineStatus{return{active:this.active.size,activeRunIds:[...this.active.keys()],backgroundProviders:[...this.backgrounds.keys()].sort(),contentProviders:[...this.contents.keys()].sort(),stopping:this.lifetime.signal.aborted,lastFailure:this.lastFailure}}
  /** @param provider - installed observer for explicitly scoped asynchronous work. @returns disposer that stops new cases and cancels and joins cases already using this observer. */
  registerBackground(provider:BackgroundProvider):()=>Promise<void>{
   if(this.lifetime.signal.aborted)throw new LabError('closed');if(this.backgrounds.has(provider.id))throw new LabError('background-unavailable');if(this.backgrounds.size>=this.config.maxBackgroundProviders)throw new LabError('background-limit')
   const entry:BackgroundRegistration={provider,runs:new Set(),closing:false};this.backgrounds.set(provider.id,entry)
   return()=>entry.disposal??=(async()=>{entry.closing=true;this.backgrounds.delete(provider.id);const active=[...entry.runs].flatMap(id=>{const run=this.active.get(id);return run?[run]:[]});for(const run of active)run.controller.abort();await Promise.allSettled(active.map(run=>run.done))})()
+ }
+ /** @param provider - installed synthetic source and output resolver. @returns cancellation and joined cleanup of cases already using it. */
+ registerContent(provider:ContentProvider):()=>Promise<void>{
+  if(this.lifetime.signal.aborted)throw new LabError('closed');if(this.contents.has(provider.id))throw new LabError('content-unavailable');if(this.contents.size>=this.config.maxContentProviders)throw new LabError('content-limit')
+  const entry:ContentRegistration={provider,runs:new Set(),closing:false};this.contents.set(provider.id,entry)
+  return()=>entry.disposal??=(async()=>{entry.closing=true;this.contents.delete(provider.id);const work=[...entry.runs].flatMap(id=>{const run=this.active.get(id);return run?[run]:[]});for(const run of work)run.controller.abort();await Promise.allSettled(work.map(run=>run.done))})()
  }
  /**
   * Submit owner JSON through installed consumers, retaining the original complete case.
@@ -76,11 +85,11 @@ export class LabEngine{
   let accept!:(value:RunAdmission)=>void,rejectAdmission!:(error:unknown)=>void
   const admission=new Promise<RunAdmission>((resolve,reject)=>{accept=resolve;rejectAdmission=reject})
   void admission.catch((_error:unknown)=>{/* run() observes failure through done; start() observes admission. */})
-  const observers=[...this.backgrounds.values()].sort((a,b)=>a.provider.id.localeCompare(b.provider.id))
-  const done=Promise.resolve().then(()=>this.execute(runId,scenario,combined,accept,observers)).catch(error=>{rejectAdmission(error);throw error})
+  const observers=[...this.backgrounds.values()].sort((a,b)=>a.provider.id.localeCompare(b.provider.id)),contents=[...this.contents.values()].sort((a,b)=>a.provider.id.localeCompare(b.provider.id))
+  const done=Promise.resolve().then(()=>this.execute(runId,scenario,combined,accept,observers,contents)).catch(error=>{rejectAdmission(error);throw error})
   const entry:Active={digest,controller,done,admission};this.active.set(runId,entry)
-  for(const observer of observers)observer.runs.add(runId)
-  const release=()=>{this.active.delete(runId);for(const observer of observers)observer.runs.delete(runId)}
+  for(const observer of [...observers,...contents])observer.runs.add(runId)
+  const release=()=>{this.active.delete(runId);for(const observer of [...observers,...contents])observer.runs.delete(runId)}
   void done.then(result=>{if(result.phase==='failed'&&result.failure)this.lastFailure={runId,code:result.failure};release()},error=>{this.lastFailure={runId,code:failureCode(error)};release()})
   return{entry,shared:false}
  }
@@ -130,18 +139,20 @@ export class LabEngine{
   return{scope:{account,kind:conversation.kind,peerId:identifier('im.peer','lab-peer/'+runId+'/'+conversation.id)},messageId:identifier('im.message','lab-in/'+runId+'/'+input.id),senderId:user(input.actor),sentAt:now,receivedAt:now,directedToBot:input.directed,
    parts:[...quotedOutput?[{type:'reply' as const,messageId:identifier('im.message',quotedOutput)}]:[],...input.replyTo?[{type:'reply' as const,messageId:identifier('im.message','lab-in/'+runId+'/'+input.replyTo)}]:[],...input.directed?[{type:'mention' as const,userId:identifier('im.user',account.accountId)}]:[],...input.mentionActor?[{type:'mention' as const,userId:user(input.mentionActor)}]:[],{type:'text',text:input.text},...mediaParts,...input.card?[{type:'card' as const,format:input.card.format,content:input.card.content}]:[]]}
  }
- private async execute(runId:RunId,scenario:Scenario,signal:AbortSignal,admitted:(value:RunAdmission)=>void,observers:readonly BackgroundRegistration[]):Promise<RunResult>{
-  const claim=await RunJournal.claim(this.config,runId,scenario,observers.map(value=>value.provider.id))
+ private async execute(runId:RunId,scenario:Scenario,signal:AbortSignal,admitted:(value:RunAdmission)=>void,observers:readonly BackgroundRegistration[],contentProviders:readonly ContentRegistration[]):Promise<RunResult>{
+  const claim=await RunJournal.claim(this.config,runId,scenario,observers.map(value=>value.provider.id),contentProviders.map(value=>value.provider.id))
   if(!claim.created){admitted({runId,replayed:true});return{...claim.stored.result,replayed:true}}
   admitted({runId,replayed:false});this.journals.set(runId,claim.journal)
   const journal=claim.journal,account=labAccount(this.config.namespace,runId)
   const routing=this.media?.runtime,runMedia=this.config.mediaEnabled&&this.media&&routing?new RunMedia(this.config,{attachments:this.media.attachments,runtime:routing},account,scenario,journal):undefined
-  const provider=new CaptureTransport(account,runId,scenario,journal,runMedia?this.media?.runtime:undefined),outputStages:(readonly Pick<Capture,'messageId'|'conversation'>[])[]=[]
+  const contentRuns:{readonly id:ContentProviderId;readonly run:ContentRun}[]=[],scopes=scenario.conversations.map(conversation=>({conversation:conversation.id,scope:labScope(this.config.namespace,runId,conversation)})),content=new RunContent(this.config,contentRuns,scopes,journal,runMedia?this.media?.runtime:undefined)
+  const provider=new CaptureTransport(account,runId,scenario,journal,runMedia?this.media?.runtime:undefined,content),outputStages:(readonly Pick<Capture,'messageId'|'conversation'>[])[]=[]
   let outputCount=0
   const backgrounds:{readonly id:BackgroundProviderId;readonly run:BackgroundRun}[]=[],observed=new Set<string>()
   let release:(()=>Promise<void>)|undefined,releaseMedia:(()=>Promise<void>)|undefined,failure:FailureCode|null=null
   try{
    signal.throwIfAborted();if(runMedia&&routing)releaseMedia=routing.register(runMedia.provider);release=this.im.register(provider)
+   for(const entry of contentProviders){if(entry.closing)throw new LabError('content-unavailable');try{contentRuns.push({id:entry.provider.id,run:entry.provider.open({runId,scopes})})}catch(error){throw new LabError('content-unavailable')}}
    if(this.config.backgroundRequirements.some(id=>!observers.some(observer=>observer.provider.id===id)))throw new LabError('background-unavailable')
    for(const observer of observers){if(observer.closing)throw new LabError('background-unavailable');try{backgrounds.push({id:observer.provider.id,run:observer.provider.open({runId,scopes:scenario.conversations.map(conversation=>({conversation:conversation.id,scope:labScope(this.config.namespace,runId,conversation)})),maxTasks:this.config.maxBackgroundTasks})})}catch(error){throw new LabError('background-unavailable')}}
    for(const [stageIndex,stage] of scenario.stages.entries()){
@@ -152,7 +163,9 @@ export class LabEngine{
      if(quote&&!quotedOutput)throw new LabError('invalid-scenario')
      const destination=labScope(this.config.namespace,runId,scenario.conversations.find(value=>value.id===input.conversation)!)
      const mediaParts=runMedia?await runMedia.parts(destination,input,signal):[]
-     const report=await this.im.publish(this.message(runId,scenario,input,account,quotedOutput,mediaParts),signal)
+     const extra=await content.input({input,scope:destination,messageId:identifier('im.message','lab-in/'+runId+'/'+input.id),actorId:alias=>{if(!scenario.actors.includes(alias))throw new LabError('content-invalid');return identifier('im.user','lab-actor/'+runId+'/'+alias)},media:async(type,asset)=>{if(!runMedia)throw new LabError('media-unavailable');const parts=await runMedia.parts(destination,{...input,media:[{type,asset}]},signal);return parts[0]!}},signal)
+     const message=this.message(runId,scenario,input,account,quotedOutput,[...mediaParts,...extra]);await content.observe(message,signal)
+     const report=await this.im.publish(message,signal)
      await journal.append({type:'dispatch',inputId:input.id,report,time:Date.now()})
     }))
     for(const outcome of settled)if(outcome.status==='rejected')failure??=signal.aborted?'cancelled':failureCode(outcome.reason)
@@ -169,7 +182,7 @@ export class LabEngine{
     if(failure)break
    }
   }catch(error){failure=signal.aborted?'cancelled':failureCode(error)}
-  finally{for(const background of backgrounds)try{await background.run.close()}catch(error){failure??='background-unavailable'}try{if(release)await release()}catch(error){failure??=failureCode(error)}try{if(releaseMedia)await releaseMedia();else if(runMedia)await runMedia.provider.dispose()}catch(error){failure??=mediaFailure(error).code}}
+  finally{for(const background of backgrounds)try{await background.run.close()}catch(error){failure??='background-unavailable'}try{if(release)await release()}catch(error){failure??=failureCode(error)}for(const entry of contentRuns)try{await entry.run.close()}catch(error){failure??='content-unavailable'}try{if(releaseMedia)await releaseMedia();else if(runMedia)await runMedia.provider.dispose()}catch(error){failure??=mediaFailure(error).code}}
   try{
    const counts=summarize(runId,journal.snapshot())
    failure??=provider.failure()??(counts.consumerFailures?'consumer-failed':counts.unhandledInputs?'no-consumer':null)
@@ -195,5 +208,5 @@ export class LabEngine{
   })();this.mediaReads.add(operation);void operation.then(()=>{this.mediaReads.delete(operation)},()=>{this.mediaReads.delete(operation)});return operation
  }
  /** @returns completion after aborting and joining every active run; the caller still owns IM shutdown. */
- close():Promise<void>{if(this.stopping)return this.stopping;this.lifetime.abort();return this.stopping=(async()=>{await Promise.allSettled([...this.active.values()].map(value=>value.done));await Promise.allSettled([...this.mediaReads]);this.backgrounds.clear()})()}
+ close():Promise<void>{if(this.stopping)return this.stopping;this.lifetime.abort();return this.stopping=(async()=>{await Promise.allSettled([...this.active.values()].map(value=>value.done));await Promise.allSettled([...this.mediaReads]);this.backgrounds.clear();this.contents.clear()})()}
 }

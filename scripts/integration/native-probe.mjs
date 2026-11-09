@@ -1,8 +1,8 @@
 /** Probe only synthetic local Lab runs through the installed Chat bundle and native agent. */
 import assert from 'node:assert/strict'
-import {writeFile} from 'node:fs/promises'
+import {writeFile,rename} from 'node:fs/promises'
 import {setTimeout as delay} from 'node:timers/promises'
-export const inject=['imMedia','im','imLab','jobDelivery','labBackgroundFixture','qqChat','imLabControl','configEditor','typertGateway','remoteAccess','connection']
+export const inject=['imMedia','im','labForwardFixture','imLab','jobDelivery','labBackgroundFixture','qqChat','imLabControl','configEditor','typertGateway','remoteAccess','connection']
 const source=(text,directed=true)=>({title:'Synthetic native Lab case',actors:['alice'],conversations:[{id:'lounge',kind:'group'}],stages:[{inputs:[{id:'first',actor:'alice',conversation:'lounge',text,directed}]}]})
 export function apply(ctx,config){const work=probe(ctx,config);ctx.effect(()=>async()=>{await work})}
 async function probe(ctx,config){
@@ -83,7 +83,7 @@ async function probe(ctx,config){
   checks.push('native-media-inputs-and-generated-output-retain-verbatim-bytes-with-owner-only-downloads-and-no-model-call-or-replay')
   const backgroundId='native-background-quote-0001',backgroundCase=source('LAB_BACKGROUND_TEXT',false);backgroundCase.actors.push('bob');backgroundCase.stages.push({inputs:[{id:'follow',actor:'bob',conversation:'lounge',text:'LAB_BACKGROUND_FOLLOW',directed:false,replyToOutput:{stage:0,index:0}}]})
   const background=await ctx.imLab.run({runId:backgroundId,scenario:backgroundCase},new AbortController().signal);assert.equal(background.phase,'completed');assert.equal(background.captureCount,2)
-  const backgroundReport=await ctx.imLab.inspect(backgroundId);assert.equal(backgroundReport.created.schema,2);assert.deepEqual(backgroundReport.created.backgroundProviders,['job-delivery']);assert.equal(backgroundReport.events.filter(event=>event.type==='background').length,2);assert.equal(backgroundReport.events.filter(event=>event.type==='capture')[1].capture.parts[0].text,'LAB_BACKGROUND_QUOTED')
+  const backgroundReport=await ctx.imLab.inspect(backgroundId);assert.equal(backgroundReport.created.schema,3);assert.deepEqual(backgroundReport.created.backgroundProviders,['job-delivery']);assert.equal(backgroundReport.events.filter(event=>event.type==='background').length,2);assert.equal(backgroundReport.events.filter(event=>event.type==='capture')[1].capture.parts[0].text,'LAB_BACKGROUND_QUOTED')
   assert.equal((await ctx.imLab.run({runId:backgroundId,scenario:backgroundCase},new AbortController().signal)).replayed,true)
   checks.push('installed-background-job-adapter-retains-queued-text-before-cross-participant-output-quote-without-replay')
   const queuedMedia={...mediaCase,title:'Queued original media',stages:[{inputs:[{...mediaCase.stages[0].inputs[0],text:'LAB_BACKGROUND_MEDIA'}]}]},queuedId='native-background-media-0001'
@@ -97,9 +97,15 @@ async function probe(ctx,config){
    const sibling=await ctx.imLab.run({runId:'native-background-sibling-0001',scenario:source('LAB_BACKGROUND_TEXT',false)},new AbortController().signal);assert.equal(sibling.phase,'completed');assert.equal(joined,false);ctx.labBackgroundFixture.finish();assert.equal((await held).phase,'cancelled');assert.equal(ctx.jobDelivery.status().running,0);assert.equal(ctx.jobDelivery.status().sending,0)
   }finally{ctx.labBackgroundFixture.finish()}
   checks.push('native-cancel-joins-actual-background-producer-cleanup-while-sibling-case-finishes')
+  const forwardId='native-lab-forward-case-0001',forwardCase=ctx.labForwardFixture.source(),beforeForward=ctx.labForwardFixture.calls()
+  const forwardResult=await ctx.imLab.run({runId:forwardId,scenario:forwardCase},new AbortController().signal);assert.equal(forwardResult.phase,'completed');assert.equal(forwardResult.captureCount,1);assert.equal(forwardResult.unresolvedMedia,0)
+  const forwardReport=await ctx.imLab.inspect(forwardId),content=forwardReport.events.find(value=>value.type==='content').content;assert.equal(content.document.resources.length,2);assert.equal(content.document.messages.length,2);assert.equal(content.originals.length,3);const forwardView=await invoke('inspect',{request:{runId:forwardId}});assert.equal(forwardView.contents.length,1);assert.equal(forwardView.contents[0].complete,true);assert.equal(forwardView.omittedContents,0)
+  for(const item of content.originals){const response=await handler.fetch(new Request('http://localhost/api/im-lab-media?runId='+forwardId+'&attachmentId='+item.attachmentId),peer);assert.equal(response.status,200);assert.ok((await response.arrayBuffer()).byteLength>0)}
+  assert.equal((await ctx.imLab.run({runId:forwardId,scenario:forwardCase},new AbortController().signal)).replayed,true);assert.equal(ctx.labForwardFixture.calls(),beforeForward+1);assert.equal(ctx.imMedia.status().providers,0)
+  checks.push('installed-forward-core-and-resolver-retain-nested-quotes-originals-and-owner-previews-without-replay-or-model-call')
   const exported=await ctx.imLab.export(firstId,new AbortController().signal),report=await new Response(exported.body).text();await exported.done
   assert.ok(report.includes('LAB_REPLY_1')&&report.includes('LAB_REPLY_2'))
   checks.push('native-full-report-export-retains-all-structured-captures')
-  await writeFile(config.resultPath,JSON.stringify({passed:true,checks,realQqMessagesSent:0,realModelApiRequests:0,modelBackend:'native Messages adapter to controlled loopback HTTP',semanticQualityVerified:false},null,2)+'\n')
- }catch(error){await writeFile(config.resultPath,JSON.stringify({passed:false,checks,error:{message:error.message,stack:error.stack},realQqMessagesSent:0,realModelApiRequests:0},null,2)+'\n')}
+  await writeFile(config.resultPath+'.tmp',JSON.stringify({passed:true,checks,realQqMessagesSent:0,realModelApiRequests:0,modelBackend:'native Messages adapter to controlled loopback HTTP',semanticQualityVerified:false},null,2)+'\n');await rename(config.resultPath+'.tmp',config.resultPath)
+ }catch(error){await writeFile(config.resultPath+'.tmp',JSON.stringify({passed:false,checks,error:{message:error.message,stack:error.stack},realQqMessagesSent:0,realModelApiRequests:0},null,2)+'\n');await rename(config.resultPath+'.tmp',config.resultPath)}
 }

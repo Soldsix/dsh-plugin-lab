@@ -6,6 +6,7 @@ import type {RunId,Scenario,Capture,FailureCode} from './types.ts'
 import {RunJournal} from './journal.ts'
 import {failureCode} from './errors.ts'
 import {outputFingerprint} from './identity.ts'
+import type {RunContent} from './content.ts'
 
 /** Capture provider owns no account credentials, connection or live network endpoint. */
 export class CaptureTransport implements ImTransport{
@@ -15,7 +16,7 @@ export class CaptureTransport implements ImTransport{
  private closed=false
  private serial=0
  private lastFailure:FailureCode|null=null
- constructor(readonly account:AccountRef,private readonly runId:RunId,scenario:Scenario,private readonly journal:RunJournal,private readonly media?:ImMediaRuntime){
+ constructor(readonly account:AccountRef,private readonly runId:RunId,scenario:Scenario,private readonly journal:RunJournal,private readonly media?:ImMediaRuntime,private readonly content?:RunContent){
   for(const conversation of scenario.conversations)this.peers.set('lab-peer/'+runId+'/'+conversation.id,{id:conversation.id,kind:conversation.kind})
  }
  /** @returns the last sanitized capture failure, independently of listener completion. */
@@ -43,7 +44,7 @@ export class CaptureTransport implements ImTransport{
   if(existing)return existing.fingerprint===fingerprint?existing.promise:Promise.resolve({status:'failed',code:'rejected'})
   const capture:Capture={operationId:message.operationId,conversation:peer.id,kind:peer.kind,parts:structuredClone(message.parts),messageId:'lab-out/'+this.runId+'/'+(++this.serial)}
   const promise=(async():Promise<DeliveryReceipt>=>{
-   try{const originals=this.media?await materialize(this.media,message.scope,message.parts,signal):undefined;const retained:Capture={...capture,...originals?{originals}: {}};await this.journal.append({type:'capture',capture:retained,time:Date.now()});this.captured.push({messageId:capture.messageId,conversation:capture.conversation});return{status:'accepted',messageIds:[identifier('im.message',capture.messageId)]}}
+   try{await this.content?.capture(message,capture.messageId,signal);const originals=this.media?await materialize(this.media,message.scope,message.parts,signal):undefined;const retained:Capture={...capture,...originals?{originals}: {}};await this.journal.append({type:'capture',capture:retained,time:Date.now()});this.captured.push({messageId:capture.messageId,conversation:capture.conversation});return{status:'accepted',messageIds:[identifier('im.message',capture.messageId)]}}
    catch(error){this.lastFailure=failureCode(error);throw error}
   })()
   this.operations.set(message.operationId,{fingerprint,promise});return promise

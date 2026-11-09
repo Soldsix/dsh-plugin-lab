@@ -23,7 +23,7 @@ test('the next stage can quote a background output after admission-only consumer
  try{
   const done=engine.run({runId,scenario:source},signal());await waiting.promise;assert.equal(second,0);assert.equal((await engine.inspect(runId)).result.phase,'unfinished');finish.resolve();const result=await done
   assert.equal(result.phase,'completed');assert.equal(result.captureCount,2);assert.equal(second,1);assert.equal(closed,true);assert.equal(settles,2)
-  const report=await engine.inspect(runId);assert.equal(report.created.schema,2);assert.deepEqual(report.created.backgroundProviders,['fixture']);assert.deepEqual(report.events.filter(event=>event.type==='background').map(event=>[event.stage,event.tasks.length]),[[0,1],[1,0]])
+  const report=await engine.inspect(runId);assert.equal(report.created.schema,3);assert.deepEqual(report.created.backgroundProviders,['fixture']);assert.deepEqual(report.events.filter(event=>event.type==='background').map(event=>[event.stage,event.tasks.length]),[[0,1],[1,0]])
  }finally{finish.resolve()}
 })
 

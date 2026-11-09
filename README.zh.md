@@ -8,7 +8,7 @@ kind: "package-bundle"
 
 ## 概要
 
-用合成身份运行分阶段对话，计算前保留完整来源，并在本地捕获结构化出站消息。原生所有者页面管理后台用例与原件下载；可选媒体功能通过范围绑定的原生附件保留图片、音频、视频和文件，支持浏览器导入与预览。模型和工具由已安装消费插件提供。可选持久任务观察会等待最终结果和清理；合并转发与外部写入捕获仍待完成。
+使用合成身份执行分阶段对话，计算前保留完整来源，并在本地捕获结构化出站消息。原生所有者页面管理后台用例与原件下载；可选媒体功能保留图片、音视频及文件的完整字节。已安装消费者提供模型和工具；可选持久任务观察器等待最终结果与清理。可选转发解析器保留嵌套图、引用与原件映射，外部写入捕获仍待完成。
 
 ## 目录
 
@@ -40,7 +40,13 @@ kind: "package-bundle"
 
 每阶段等待新受理的任务与实际工作清理结束，后续阶段才能引用捕获的输出。报告保留选中/必须的观察器 ID 和完整任务状态计数，不含任务输入正文。缺少观察器在投递前失败；失败、取消与不确定状态明确保留，不自动重试或重放生成。取消时先停止并等待所属工作再关闭捕获。只观察精确匹配的合成运行范围，发现已有任务则拒绝且不修改。
 
-maxBackgroundProviders 和 maxBackgroundTasks 分别限制观察器注册与每用例任务观察数；requiredBackgroundProviders 是已安装 ID 的逗号分隔列表。自定义 Host 观察器通过 registerBackground 提供阶段等待和清理等待；子工作必须在父任务完成前受理，完成后另启的脱离工作不在保证范围。新报告使用 schema 2，不可变 schema 1 报告仍可读取，不重放、不迁移。见[升级指南](https://github.com/Soldsix/dsh-plugin-lab/blob/main/docs/upgrade-guide/v0.1.0-development/background-capture/guide.zh.md)。
+maxBackgroundProviders 和 maxBackgroundTasks 分别限制观察器注册与每用例任务观察数；requiredBackgroundProviders 是已安装 ID 的逗号分隔列表。自定义 Host 观察器通过 registerBackground 提供阶段等待和清理等待；子工作必须在父任务完成前受理，完成后另启的脱离工作不在保证范围。新报告使用 schema 3，不可变 schema 1、schema 2 报告仍可读取，不重放、不迁移。见[升级指南](https://github.com/Soldsix/dsh-plugin-lab/blob/main/docs/upgrade-guide/v0.1.0-development/background-capture/guide.zh.md)。
+
+结构化转发用例还需安装 dsh-qq-forward 0.1.0-development，并启用 plugin-lab-forward、设置 config.enabled=true；该条目默认停用，provider 默认为 qq-forward。同时启用独立 qq-forward 核心、原生存储/附件和实验室媒体。[examples/forward.case.json](examples/forward.case.json) 提供合成参与者、内联原件、嵌套资源、内部节点引用及较早输入引用。RunContent 将规范化消息交给相同 IM 消费者；可选适配器调用已安装转发核心，不另写一套图实现。
+
+每条输入可在 content 中提供解析器 ID 及完整 JSON 值。转发格式接受 nodes 和可选命名 resources；节点支持 actor、可选显示名/sourceId，按顺序排列 text、mention、媒体资产、forward、inline-forward、reply-input、reply-node。别名只在该合成用例中解析。新的 content 事件在本地接纳前保留文档、完整性及原件句柄映射。所有者页面提供有界转义文档预览和完整原件下载；JSONL 导出保留完整图。缺失提供者、来源错误、解析器歧义和容量失败均明确报告，见[升级指南](docs/upgrade-guide/v0.2.0-development/content-capture/guide.zh.md)。
+
+maxContentProviders、maxContentPerInput、maxArtifactsPerCapture 限制已安装解析器与每条消息的数量；原有记录、报告及媒体容量同样适用，原件不缩放、不重编码。自定义 Host 提供者通过 registerContent 实现范围绑定输入转换、引用观察、输出捕获和等待清理完成的 close。移除解析器会先取消并等待其用例清理，再释放来源提供者；不安装真实 QQ 发送器，也不向来源 JSON 授予文件系统或 URL 访问。
 
 <a id="current-use-and-scope"></a>
 ## 当前用法与范围
@@ -53,7 +59,7 @@ maxBackgroundProviders 和 maxBackgroundTasks 分别限制观察器注册与每�
 
 ```sh
 dsh --profile qq-lab --from-default-profile web --dump-config
-dsh plugin --profile qq-lab add https://github.com/Soldsix/dsh-plugin-lab/releases/download/v0.2.0-development/dsh-plugin-lab-0.2.0-development.tgz
+dsh plugin --profile qq-lab add ./artifacts/dsh-plugin-lab-0.3.0-development.tgz
 dsh --profile qq-lab --no-open
 ```
 
@@ -87,7 +93,7 @@ DSH Host profile 必须先具备其公开声明的非可选 peer 依赖。隔离
 
 是否回复由正式消费者判断。结果 `completed` 只表示已接纳阶段处理结束，不代表语义质量通过、模型成功或 QQ 投送验收。捕获结果保留结构化文字、艾特、引用 ID 与不透明媒体引用；`unresolvedMedia` 统计尚未提取最终字节的引用数量。
 
-输入可用 `replyTo` 引用较早输入，或用 `replyToOutput: {"stage": 0, "index": 0}` 引用较早阶段实际捕获的机器人输出，二者互斥。阶段与输出索引从零开始；输出索引只在同一会话内按该阶段持久捕获的顺序选择，不绑定具体输入，也不引用其他会话。并行或未来阶段的选择会在执行前拒绝；若较早输出不存在，则保留完整来源并在投送依赖输入前终止。还可携带一个保留原始 JSON/XML 的 `{format, content}` 卡片，与正文共用文字容量。空正文必须带卡片或媒体；解析、搜索与网页访问仍由已安装的消费插件负责。
+输入可用 `replyTo` 引用较早输入，或用 `replyToOutput: {"stage": 0, "index": 0}` 引用较早捕获的机器人输出，不能同时使用两者。阶段和输出索引从零开始，输出索引只选择该阶段同一会话中按持久捕获顺序排列的消息，不选择某个输入或其他会话。并发和未来引用在执行前拒绝；若指定早期输出不存在，保留来源并在发布依赖输入前失败。单个 `{format, content}` 卡片保留原始 JSON/XML，并与正文共享文字容量。空正文要求卡片、媒体或结构化内容；解析、搜索和网页访问由已安装消费者负责。
 
 <a id="original-media"></a>
 ## 媒体原件
@@ -139,7 +145,7 @@ DSH Host profile 必须先具备其公开声明的非可选 peer 依赖。隔离
 
 `maxMediaItemBytes`、`maxMediaBytes`、`maxMediaReferences`、`maxMediaOperations`、`maxMediaDimension`、`maxMediaPixels`、`mediaChunkBytes` 和 `allowedMediaMimeTypes` 均可配置。来源字节总和与去重存储原件分别受总量约束。Base64 大于原件，完整来源还独立受记录与报告容量限制；超限保留调用者草稿，绝不截断媒体。
 
-所有者页面按数量展示原件的体积、MIME、尺寸和哈希。图片预览使用原始编码字节，音视频控件也请求相同字节。“下载原件”完整核对内容后返回数据，HTML 等文件强制作为附件。媒体读取和活跃写入会阻止冲突的配置修改。报告保留原生授权，后续下载不重新运行用例。合并转发仍为未解析；`unresolvedMedia` 仅扣除已实际物化并记录完整原件的输出段。
+所有者页面有界展示原件大小、MIME、尺寸与哈希。图片预览使用原始编码字节，音视频控件读取同一原件。下载前核对完整字节，HTML 等文件以附件返回。媒体读取与活动写入阻止冲突配置变更；报告保留原生授权，以后下载不重跑用例。可选内容提供者解析的转发保留完整文档与范围绑定的原件映射；未解析或不完整转发仍计入 `unresolvedMedia`，不透明引用不能伪装成已验证内容。
 
 实验室自身不识图、转写、合成语音或生图，应安装读取 `ctx.imMedia` 并通过正常 IM 服务投送结果的消费插件。配置的模型与工具调用仍会真实执行，仅声明的本地消息/媒体出口被捕获。原件与报告下载共用原生连接的所有者鉴权。
 
@@ -160,5 +166,5 @@ DSH Host profile 必须先具备其公开声明的非可选 peer 依赖。隔离
 
 - 本地测试覆盖原件媒体、三个并发的 15 人用例、所有者权限、取消、持久后台用例、原件下载及浏览器导入/预览/解码，实际安装的任务场景另验证只返回受理的生产者、产物引用和取消清理等待；不能证明自然对话、OCR 或身份准确率、合成质量或整套应用行为。
 - 早期真实 DeepSeek 文字冒烟覆盖上下文回忆、算术和公开回复留存；本轮媒体使用受控本地模型与真实原生附件 API，没有新增上游模型调用。仓库 CI 检查 Windows/Linux 发行包与原生 profile，以及 Linux Web；桌面和真实 QQ 投送尚未验收。
-- 合并转发、QQ 最终编码和平台写入捕获仍需适配器。本包不隔离任意可信宿主代码，也不会静默阻断或捕获其直接外部写入。
+- 未解析转发、QQ 最终编码和平台写入捕获仍需适配器。本包不隔离任意可信宿主代码，也不会静默阻断或捕获其直接外部写入。
 - 所有者报告在本地未加密保留完整正文、来源字节和原生回执；即使非所有者拥有全局 Remote 权限，控制操作与下载也会拒绝。Chat 已披露的宿主核心热替换限制同样适用。

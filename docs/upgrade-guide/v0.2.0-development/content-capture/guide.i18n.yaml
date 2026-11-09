@@ -1,0 +1,19 @@
+# Bilingual-pair consistency record for guide.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/upgrade-guide/v0.2.0-development/content-capture/guide.md
+/:
+  en: cb3f91d54eee30e5
+  zh: cb3f91d54eee30e5
+/kind-upgrade-guide-description-structured-laboratory-sources-and-captured-artifacts-require-generation-three-readers-and-updated-native-client-codecs:
+  en: fddbcec577c43aa3
+  zh: 21a62ebf6e296496
+/upgrade-structured-content-capture:
+  en: c4e5a5749cd1bad1
+  zh: 181edb50e6a49941
+/upgrade-structured-content-capture/change:
+  en: 993e266ff9d5d4fe
+  zh: b7be33bb16493632
+/upgrade-structured-content-capture/migration:
+  en: 737135e40da82fed
+  zh: 445c1e4bd31ad173

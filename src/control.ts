@@ -32,7 +32,7 @@ function settings(value:unknown):Settings{
 }
 function decode<T>(schema:{parse(value:unknown):T},value:unknown):T{try{return schema.parse(value)}catch(error){throw problem('request-invalid')}}
 function sanitized(error:unknown):RemoteError<'im-lab/control'>{
- if(error instanceof LabError&&['capacity','source-conflict','journal-unavailable','journal-limit','journal-invalid','invalid-scenario','closed','cancelled','media-unavailable','media-invalid','media-failed','background-failed','background-unresolved','background-unavailable','background-limit'].includes(error.code))return problem(error.code as ControlFailure)
+ if(error instanceof LabError&&['capacity','source-conflict','journal-unavailable','journal-limit','journal-invalid','invalid-scenario','closed','cancelled','media-unavailable','media-invalid','media-failed','background-failed','background-unresolved','background-unavailable','background-limit','content-unavailable','content-invalid','content-limit'].includes(error.code))return problem(error.code as ControlFailure)
  return problem('apply-failed')
 }
 
@@ -156,8 +156,8 @@ export class LabControl extends TypertRemoteService{
  async inspect(request:unknown):Promise<InspectResponse>{
   this.owner();const edit=decode(runSchema,request)
   try{
-   const runtime=this.runtime(),active=runtime.status().activeRunIds.includes(edit.runId),stored=await runtime.inspect(edit.runId),all=stored.events.filter(event=>event.type==='capture'),media=stored.events.filter(event=>event.type==='media-grant')
-   return{result:stored.result,active,incompleteTail:stored.incompleteTail,omittedCaptures:Math.max(0,all.length-this.config.previewCaptures),omittedOriginals:Math.max(0,media.length-this.config.previewCaptures),originals:media.slice(0,this.config.previewCaptures).map(({grant})=>{const d=grant.stored.descriptor;return{attachmentId:identifier('im.attachment',grant.reference),fileName:d.fileName,mime:d.mime,bytes:d.byteLength,sha256:d.sha256,...d.image?{width:d.image.width,height:d.image.height}:{}}}),captures:all.slice(0,this.config.previewCaptures).map(({capture})=>{
+   const runtime=this.runtime(),active=runtime.status().activeRunIds.includes(edit.runId),stored=await runtime.inspect(edit.runId),all=stored.events.filter(event=>event.type==='capture'),media=stored.events.filter(event=>event.type==='media-grant'),contents=stored.events.filter(event=>event.type==='content')
+   return{result:stored.result,active,incompleteTail:stored.incompleteTail,contents:contents.slice(0,this.config.previewCaptures).map(({content})=>{const text=JSON.stringify(content.document,null,2);return{conversation:content.conversation,messageId:content.messageId,partIndex:content.partIndex,provider:content.provider,format:content.format,version:content.version,complete:content.complete,text:text.slice(0,this.config.previewChars),truncated:text.length>this.config.previewChars,originals:content.originals.length}}),omittedContents:Math.max(0,contents.length-this.config.previewCaptures),omittedCaptures:Math.max(0,all.length-this.config.previewCaptures),omittedOriginals:Math.max(0,media.length-this.config.previewCaptures),originals:media.slice(0,this.config.previewCaptures).map(({grant})=>{const d=grant.stored.descriptor;return{attachmentId:identifier('im.attachment',grant.reference),fileName:d.fileName,mime:d.mime,bytes:d.byteLength,sha256:d.sha256,...d.image?{width:d.image.width,height:d.image.height}:{}}}),captures:all.slice(0,this.config.previewCaptures).map(({capture})=>{
     const text=capture.parts.filter(part=>part.type==='text').map(part=>part.text).join('\n')
     return{conversation:capture.conversation,kind:capture.kind,text:text.slice(0,this.config.previewChars),truncated:text.length>this.config.previewChars,nonTextParts:capture.parts.filter(part=>part.type!=='text').length}
    })}

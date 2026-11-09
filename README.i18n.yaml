@@ -3,29 +3,35 @@
 # After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write README.md
 /:
-  en: b4589b135287afff
-  zh: 517d138182423dcb
+  en: cb3f91d54eee30e5
+  zh: cb3f91d54eee30e5
+/description-run-staged-synthetic-conversations-through-im-consumers-and-retain-structured-local-output-kind-package-bundle:
+  en: 40dd8d62a9de1019
+  zh: 735d21c29fdcf0cc
 /dsh-plugin-lab:
   en: 03209545b4a3f014
   zh: 9eddd2b23271fa21
 /dsh-plugin-lab/summary:
-  en: 571882686059017f
-  zh: 649d47a630fa9da1
+  en: c40af7fe5de5b102
+  zh: 61527137041dc682
 /dsh-plugin-lab/table-of-contents:
-  en: 5dce0ec26549be9f
-  zh: de2241d215b159a0
+  en: 8bd5311e4ceee68d
+  zh: 86678169332f942e
+/dsh-plugin-lab/background-work:
+  en: 7074f513844c92f9
+  zh: cb2ca1083f591d6b
 /dsh-plugin-lab/current-use-and-scope:
-  en: b6af3e0b544863dc
-  zh: 17a559485fc7c489
+  en: fb97468043288c66
+  zh: d65fe80792a48dc8
 /dsh-plugin-lab/native-owner-page:
-  en: 1a6373910d3837e2
-  zh: 0fff0e809cb2ff40
+  en: 3cc3286f43dd94f2
+  zh: 57676640aa43dc9e
 /dsh-plugin-lab/scenario-example:
-  en: 84c96d11a8d15025
-  zh: 30c8b9d7151358ac
+  en: d4200bcbe04ecaf3
+  zh: 4ce8f13b1be00e4e
 /dsh-plugin-lab/original-media:
-  en: 79c085190e9c69ac
-  zh: 2d765abd661ef6c9
+  en: 21613f1bd640a238
+  zh: ced03b03139da0f1
 /dsh-plugin-lab/storage-and-cancellation:
   en: dab3dc8e7e773a1d
   zh: 9c8275da69d5ac82
@@ -33,5 +39,5 @@
   en: d94a7228eac6a003
   zh: b1b055cf9cfd2397
 /dsh-plugin-lab/known-limitations-and-deferred-work:
-  en: 2b20f42527f4923a
-  zh: c166214e13c44006
+  en: d328d16840a49669
+  zh: b181ee1191978d0e

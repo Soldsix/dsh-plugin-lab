@@ -21,10 +21,12 @@ export interface CancelResponse{readonly requested:boolean}
 export interface CapturePreview{readonly conversation:string;readonly kind:'group'|'private';readonly text:string;readonly truncated:boolean;readonly nonTextParts:number}
 /** Retained media metadata contains no backend paths or native attachment identifiers. */
 export interface MediaPreview extends Omit<CapturedOriginal,'partIndex'>{}
-/** Lifecycle and preview do not assert model quality or media byte verification. */
-export interface InspectResponse{readonly result:RunResult;readonly active:boolean;readonly incompleteTail:boolean;readonly captures:readonly CapturePreview[];readonly omittedCaptures:number;readonly originals:readonly MediaPreview[];readonly omittedOriginals:number}
+/** Bounded escaped structured content; the source report remains complete. */
+export interface ContentPreview{readonly conversation:string;readonly messageId:string;readonly partIndex:number;readonly provider:string;readonly format:string;readonly version:number;readonly complete:boolean;readonly text:string;readonly truncated:boolean;readonly originals:number}
+/** Complete owner observation without native attachment receipts. */
+export interface InspectResponse{readonly result:RunResult;readonly active:boolean;readonly incompleteTail:boolean;readonly captures:readonly CapturePreview[];readonly omittedCaptures:number;readonly contents:readonly ContentPreview[];readonly omittedContents:number;readonly originals:readonly MediaPreview[];readonly omittedOriginals:number}
 /** Stable operation errors contain no native path or upstream response text. */
-export type ControlFailure='forbidden'|'cancelled'|'request-invalid'|'config-invalid'|'revision-conflict'|'entry-unavailable'|'runtime-unavailable'|'busy'|'apply-failed'|'invalid-scenario'|'capacity'|'source-conflict'|'journal-unavailable'|'journal-limit'|'journal-invalid'|'closed'|'media-unavailable'|'media-invalid'|'media-failed'|'background-failed'|'background-unresolved'|'background-unavailable'|'background-limit'
+export type ControlFailure='forbidden'|'cancelled'|'request-invalid'|'config-invalid'|'revision-conflict'|'entry-unavailable'|'runtime-unavailable'|'busy'|'apply-failed'|'invalid-scenario'|'capacity'|'source-conflict'|'journal-unavailable'|'journal-limit'|'journal-invalid'|'closed'|'media-unavailable'|'media-invalid'|'media-failed'|'background-failed'|'background-unresolved'|'background-unavailable'|'background-limit'|'content-unavailable'|'content-invalid'|'content-limit'
 declare module '@deepseek-ai/dsh-typert-protocol/types'{interface RemoteErrorDetailsMap{
  /** Owner-safe lab control failure. */
  'im-lab/control':{readonly reason:ControlFailure}

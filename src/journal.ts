@@ -14,6 +14,7 @@ import {eventSchema,runIdSchema} from './schema.ts'
 import {LabError} from './errors.ts'
 import {scenarioFingerprint,labScope} from './identity.ts'
 import {backgroundFailure,type BackgroundProviderId} from './background.ts'
+import type {CapturedContent,ContentProviderId} from './content-types.ts'
 
 const marker=z.object({application:z.literal('dsh-plugin-lab'),schema:z.literal(1),namespace:z.string()}).strict()
 const isCode=(error:unknown,code:string)=>typeof error==='object'&&error!==null&&'code'in error&&error.code===code
@@ -23,7 +24,7 @@ const isCode=(error:unknown,code:string)=>typeof error==='object'&&error!==null&
  * @param capture - structured local output, unchanged from the messaging consumer.
  * @returns media references requiring a separate byte-resolution adapter.
  */
-export function unresolvedMedia(capture:Capture):number{return capture.parts.filter((part,index)=>['image','audio','video','file','forward'].includes(part.type)&&!capture.originals?.some(value=>value.partIndex===index&&'attachmentId'in part&&value.attachmentId===part.attachmentId)).length}
+export function unresolvedMedia(capture:Capture,contents:readonly CapturedContent[]=[]):number{return capture.parts.filter((part,index)=>['image','audio','video','file','forward'].includes(part.type)&&!(part.type==='forward'&&contents.some(value=>value.messageId===capture.messageId&&value.partIndex===index&&value.complete))&&!capture.originals?.some(value=>value.partIndex===index&&'attachmentId'in part&&value.attachmentId===part.attachmentId)).length}
 
 /**
  * Derive lifecycle counts without treating a captured reply as a quality verdict.
@@ -32,11 +33,12 @@ export function unresolvedMedia(capture:Capture):number{return capture.parts.fil
  * @returns persisted terminal result, or an unfinished observation with no automatic replay.
  */
 export function summarize(runId:RunId,events:readonly JournalEvent[]):RunResult{
- let inputCount=0,consumerFailures=0,unhandledInputs=0,captureCount=0,media=0
+ const contents:CapturedContent[]=[];let inputCount=0,consumerFailures=0,unhandledInputs=0,captureCount=0,media=0
  for(const event of events){
   if(event.type==='input')inputCount++
   if(event.type==='dispatch'){consumerFailures+=event.report.failed;if(event.report.accepted===0&&event.report.failed===0)unhandledInputs++}
-  if(event.type==='capture'){captureCount++;media+=unresolvedMedia(event.capture)}
+  if(event.type==='content')contents.push(event.content)
+  if(event.type==='capture'){captureCount++;media+=unresolvedMedia(event.capture,contents)}
   if(event.type==='ended')return event.result
  }
  return{runId,phase:'unfinished',replayed:false,inputCount,consumerFailures,unhandledInputs,captureCount,unresolvedMedia:media,failure:null}
@@ -98,9 +100,9 @@ export class RunJournal{
   * @param scenario - fully validated immutable source case.
   * @returns a new exclusive writer, or existing evidence without resubmitting it.
   */
- static async claim(config:Spec,runId:RunId,scenario:Scenario,backgroundProviders:readonly BackgroundProviderId[]=[]):Promise<{created:true;journal:RunJournal}|{created:false;stored:StoredRun}>{
+ static async claim(config:Spec,runId:RunId,scenario:Scenario,backgroundProviders:readonly BackgroundProviderId[]=[],contentProviders:readonly ContentProviderId[]=[]):Promise<{created:true;journal:RunJournal}|{created:false;stored:StoredRun}>{
   const original=structuredClone(scenario)
-  const header:Extract<JournalEvent,{type:'created'}>={type:'created',schema:2,runId,scenario:original,fingerprint:scenarioFingerprint(original),time:Date.now(),backgroundProviders:[...backgroundProviders],requiredBackgroundProviders:[...config.backgroundRequirements]}
+  const header:Extract<JournalEvent,{type:'created'}>={type:'created',schema:3,runId,scenario:original,fingerprint:scenarioFingerprint(original),time:Date.now(),backgroundProviders:[...backgroundProviders],requiredBackgroundProviders:[...config.backgroundRequirements],contentProviders:[...contentProviders]}
   if(Buffer.byteLength(JSON.stringify(header)+'\n')>config.maxRecordBytes)throw new LabError('journal-limit')
   const path=join(config.dataPath,runId+'.jsonl')
   let file:FileHandle
@@ -129,8 +131,9 @@ export class RunJournal{
    const created=events[0]
    if(!created||created.type!=='created'||created.runId!==runId||created.fingerprint!==scenarioFingerprint(created.scenario))throw new LabError('journal-invalid')
    const validInputs=new Set(created.scenario.stages.flatMap(stage=>stage.inputs.map(input=>input.id))),inputs=new Set<string>(),dispatches=new Set<string>(),operations=new Set<string>(),grants=new Map<string,Extract<JournalEvent,{type:'media-grant'}>['grant']>()
-   const backgroundStages=new Set<string>(),backgroundTasks=new Set<string>();let backgroundProblem=false
-   if(created.schema===2&&(new Set(created.backgroundProviders).size!==created.backgroundProviders.length||new Set(created.requiredBackgroundProviders).size!==created.requiredBackgroundProviders.length))throw new LabError('journal-invalid')
+   const contents=new Map<string,CapturedContent>(),captureIds=new Set<string>();const backgroundStages=new Set<string>(),backgroundTasks=new Set<string>();let backgroundProblem=false
+   if(created.schema!==1&&(new Set(created.backgroundProviders).size!==created.backgroundProviders.length||new Set(created.requiredBackgroundProviders).size!==created.requiredBackgroundProviders.length))throw new LabError('journal-invalid')
+   if(created.schema===3&&new Set(created.contentProviders).size!==created.contentProviders.length)throw new LabError('journal-invalid')
    for(let index=1;index<events.length;index++){
     const event=events[index]!
     if(event.type==='created')throw new LabError('journal-invalid')
@@ -138,7 +141,7 @@ export class RunJournal{
     if(event.type==='dispatch'){if(!inputs.has(event.inputId)||dispatches.has(event.inputId))throw new LabError('journal-invalid');dispatches.add(event.inputId)}
     if(event.type==='background'){
      const key=event.provider+'/'+event.stage,stage=created.scenario.stages[event.stage]
-     if(created.schema!==2||!created.backgroundProviders.includes(event.provider)||!stage||backgroundStages.has(key)||stage.inputs.some(input=>!dispatches.has(input.id)))throw new LabError('journal-invalid')
+     if(created.schema===1||!created.backgroundProviders.includes(event.provider)||!stage||backgroundStages.has(key)||stage.inputs.some(input=>!dispatches.has(input.id)))throw new LabError('journal-invalid')
      for(const task of event.tasks){const taskKey=event.provider+'/'+task.id;if(backgroundTasks.has(taskKey)||!created.scenario.conversations.some(conversation=>conversation.id===task.conversation))throw new LabError('journal-invalid');backgroundTasks.add(taskKey)}
      backgroundStages.add(key);backgroundProblem||=backgroundFailure(event.tasks)!==null
     }
@@ -146,9 +149,17 @@ export class RunJournal{
      if(grants.has(event.grant.reference)||!created.scenario.conversations.some(conversation=>mediaScope(scopeKey(labScope(config.namespace,runId,conversation)))===event.grant.scope))throw new LabError('journal-invalid')
      grants.set(event.grant.reference,event.grant)
     }
+    if(event.type==='content'){
+     const value=event.content,key=value.messageId+'/'+value.partIndex,conversation=created.scenario.conversations.find(item=>item.id===value.conversation)
+     if(created.schema!==3||!created.contentProviders.includes(value.provider)||!conversation||contents.has(key)||captureIds.has(value.messageId)||new Set(value.originals.map(item=>item.sourceId)).size!==value.originals.length)throw new LabError('journal-invalid')
+     for(const item of value.originals){const grant=grants.get(item.attachmentId);if(!grant||grant.scope!==mediaScope(scopeKey(labScope(config.namespace,runId,conversation))))throw new LabError('journal-invalid')}
+     contents.set(key,value)
+    }
     if(event.type==='capture'){
      const conversation=created.scenario.conversations.find(value=>value.id===event.capture.conversation)
      if(!conversation||conversation.kind!==event.capture.kind||operations.has(event.capture.operationId))throw new LabError('journal-invalid')
+     if(captureIds.has(event.capture.messageId))throw new LabError('journal-invalid');captureIds.add(event.capture.messageId)
+     for(const value of contents.values())if(value.messageId===event.capture.messageId&&(value.conversation!==event.capture.conversation||event.capture.parts[value.partIndex]?.type!=='forward'))throw new LabError('journal-invalid')
      const indexes=new Set<number>()
      for(const original of event.capture.originals??[]){
       const part=event.capture.parts[original.partIndex],grant=grants.get(original.attachmentId),descriptor=grant?.stored.descriptor
@@ -162,7 +173,9 @@ export class RunJournal{
      const counted=summarize(runId,events.slice(0,index))
      for(const key of['inputCount','consumerFailures','unhandledInputs','captureCount','unresolvedMedia'] as const)if(counted[key]!==event.result[key])throw new LabError('journal-invalid')
      if(event.result.phase==='completed'&&(event.result.failure!==null||inputs.size!==validInputs.size||dispatches.size!==validInputs.size||counted.consumerFailures||counted.unhandledInputs))throw new LabError('journal-invalid')
-     if(event.result.phase==='completed'&&created.schema===2&&(backgroundProblem||created.requiredBackgroundProviders.some(provider=>!created.backgroundProviders.includes(provider))||backgroundStages.size!==created.scenario.stages.length*created.backgroundProviders.length))throw new LabError('journal-invalid')
+     if(event.result.phase==='completed'&&created.schema!==1&&(backgroundProblem||created.requiredBackgroundProviders.some(provider=>!created.backgroundProviders.includes(provider))||backgroundStages.size!==created.scenario.stages.length*created.backgroundProviders.length))throw new LabError('journal-invalid')
+     if(event.result.phase==='completed'&&created.schema===3&&([...contents.values()].some(value=>!captureIds.has(value.messageId))||created.scenario.stages.some(stage=>stage.inputs.some(input=>input.content?.some(value=>!created.contentProviders.includes(value.provider))))))throw new LabError('journal-invalid')
+     if(created.schema!==3&&event.result.failure?.startsWith('content-'))throw new LabError('journal-invalid')
      if(event.result.phase==='cancelled'&&event.result.failure!=='cancelled')throw new LabError('journal-invalid')
      if(event.result.phase==='failed'&&(event.result.failure===null||event.result.failure==='cancelled'))throw new LabError('journal-invalid')
     }
