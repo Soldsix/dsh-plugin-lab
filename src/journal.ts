@@ -13,6 +13,7 @@ import {scopeKey} from 'dsh-im-kit'
 import {eventSchema,runIdSchema} from './schema.ts'
 import {LabError} from './errors.ts'
 import {scenarioFingerprint,labScope} from './identity.ts'
+import {backgroundFailure,type BackgroundProviderId} from './background.ts'
 
 const marker=z.object({application:z.literal('dsh-plugin-lab'),schema:z.literal(1),namespace:z.string()}).strict()
 const isCode=(error:unknown,code:string)=>typeof error==='object'&&error!==null&&'code'in error&&error.code===code
@@ -97,9 +98,9 @@ export class RunJournal{
   * @param scenario - fully validated immutable source case.
   * @returns a new exclusive writer, or existing evidence without resubmitting it.
   */
- static async claim(config:Spec,runId:RunId,scenario:Scenario):Promise<{created:true;journal:RunJournal}|{created:false;stored:StoredRun}>{
+ static async claim(config:Spec,runId:RunId,scenario:Scenario,backgroundProviders:readonly BackgroundProviderId[]=[]):Promise<{created:true;journal:RunJournal}|{created:false;stored:StoredRun}>{
   const original=structuredClone(scenario)
-  const header:Extract<JournalEvent,{type:'created'}>={type:'created',schema:1,runId,scenario:original,fingerprint:scenarioFingerprint(original),time:Date.now()}
+  const header:Extract<JournalEvent,{type:'created'}>={type:'created',schema:2,runId,scenario:original,fingerprint:scenarioFingerprint(original),time:Date.now(),backgroundProviders:[...backgroundProviders],requiredBackgroundProviders:[...config.backgroundRequirements]}
   if(Buffer.byteLength(JSON.stringify(header)+'\n')>config.maxRecordBytes)throw new LabError('journal-limit')
   const path=join(config.dataPath,runId+'.jsonl')
   let file:FileHandle
@@ -128,11 +129,19 @@ export class RunJournal{
    const created=events[0]
    if(!created||created.type!=='created'||created.runId!==runId||created.fingerprint!==scenarioFingerprint(created.scenario))throw new LabError('journal-invalid')
    const validInputs=new Set(created.scenario.stages.flatMap(stage=>stage.inputs.map(input=>input.id))),inputs=new Set<string>(),dispatches=new Set<string>(),operations=new Set<string>(),grants=new Map<string,Extract<JournalEvent,{type:'media-grant'}>['grant']>()
+   const backgroundStages=new Set<string>(),backgroundTasks=new Set<string>();let backgroundProblem=false
+   if(created.schema===2&&(new Set(created.backgroundProviders).size!==created.backgroundProviders.length||new Set(created.requiredBackgroundProviders).size!==created.requiredBackgroundProviders.length))throw new LabError('journal-invalid')
    for(let index=1;index<events.length;index++){
     const event=events[index]!
     if(event.type==='created')throw new LabError('journal-invalid')
     if(event.type==='input'){if(!validInputs.has(event.inputId)||inputs.has(event.inputId))throw new LabError('journal-invalid');inputs.add(event.inputId)}
     if(event.type==='dispatch'){if(!inputs.has(event.inputId)||dispatches.has(event.inputId))throw new LabError('journal-invalid');dispatches.add(event.inputId)}
+    if(event.type==='background'){
+     const key=event.provider+'/'+event.stage,stage=created.scenario.stages[event.stage]
+     if(created.schema!==2||!created.backgroundProviders.includes(event.provider)||!stage||backgroundStages.has(key)||stage.inputs.some(input=>!dispatches.has(input.id)))throw new LabError('journal-invalid')
+     for(const task of event.tasks){const taskKey=event.provider+'/'+task.id;if(backgroundTasks.has(taskKey)||!created.scenario.conversations.some(conversation=>conversation.id===task.conversation))throw new LabError('journal-invalid');backgroundTasks.add(taskKey)}
+     backgroundStages.add(key);backgroundProblem||=backgroundFailure(event.tasks)!==null
+    }
     if(event.type==='media-grant'){
      if(grants.has(event.grant.reference)||!created.scenario.conversations.some(conversation=>mediaScope(scopeKey(labScope(config.namespace,runId,conversation)))===event.grant.scope))throw new LabError('journal-invalid')
      grants.set(event.grant.reference,event.grant)
@@ -153,6 +162,7 @@ export class RunJournal{
      const counted=summarize(runId,events.slice(0,index))
      for(const key of['inputCount','consumerFailures','unhandledInputs','captureCount','unresolvedMedia'] as const)if(counted[key]!==event.result[key])throw new LabError('journal-invalid')
      if(event.result.phase==='completed'&&(event.result.failure!==null||inputs.size!==validInputs.size||dispatches.size!==validInputs.size||counted.consumerFailures||counted.unhandledInputs))throw new LabError('journal-invalid')
+     if(event.result.phase==='completed'&&created.schema===2&&(backgroundProblem||created.requiredBackgroundProviders.some(provider=>!created.backgroundProviders.includes(provider))||backgroundStages.size!==created.scenario.stages.length*created.backgroundProviders.length))throw new LabError('journal-invalid')
      if(event.result.phase==='cancelled'&&event.result.failure!=='cancelled')throw new LabError('journal-invalid')
      if(event.result.phase==='failed'&&(event.result.failure===null||event.result.failure==='cancelled'))throw new LabError('journal-invalid')
     }
@@ -209,7 +219,7 @@ export class RunJournal{
   */
  append(event:JournalEvent):Promise<void>{
   if(this.stopping)return Promise.reject(new LabError('closed'))
-  const record=structuredClone(event),line=JSON.stringify(record)+'\n',size=Buffer.byteLength(line)
+  const record=eventSchema.parse(structuredClone(event)),line=JSON.stringify(record)+'\n',size=Buffer.byteLength(line)
   const operation=this.tail.then(async()=>{
    if(this.fault)throw this.fault
    if(size>this.config.maxRecordBytes||this.bytes+size>this.config.maxReportBytes)throw new LabError('journal-limit')

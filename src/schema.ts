@@ -2,6 +2,7 @@
 import {z} from 'zod'
 import {brandString} from '@deepseek-ai/dsh-brand'
 import {identifier} from 'dsh-im-kit'
+import {backgroundProviderId,backgroundTaskId} from './background.ts'
 import {grantSchema,originalSchema} from './media-schema.ts'
 import type {Spec} from './config.ts'
 import type {RunId,Scenario,JournalEvent} from './types.ts'
@@ -59,13 +60,15 @@ const part=z.discriminatedUnion('type',[
  z.object({type:z.literal('card'),format:z.enum(['json','xml']),content:z.string()}).strict(),
  z.object({type:z.literal('unsupported'),segmentType:z.string()}).strict(),
 ])
-const result=z.object({runId:runIdSchema,phase:z.enum(['completed','cancelled','failed','unfinished']),replayed:z.boolean(),inputCount:z.number().int().nonnegative(),consumerFailures:z.number().int().nonnegative(),unhandledInputs:z.number().int().nonnegative(),captureCount:z.number().int().nonnegative(),unresolvedMedia:z.number().int().nonnegative(),failure:z.enum(['capacity','cancelled','consumer-failed','no-consumer','journal-unavailable','journal-limit','journal-invalid','invalid-scenario','source-conflict','closed','media-unavailable','media-invalid','media-failed']).nullable()}).strict()
+const result=z.object({runId:runIdSchema,phase:z.enum(['completed','cancelled','failed','unfinished']),replayed:z.boolean(),inputCount:z.number().int().nonnegative(),consumerFailures:z.number().int().nonnegative(),unhandledInputs:z.number().int().nonnegative(),captureCount:z.number().int().nonnegative(),unresolvedMedia:z.number().int().nonnegative(),failure:z.enum(['capacity','cancelled','consumer-failed','no-consumer','journal-unavailable','journal-limit','journal-invalid','invalid-scenario','source-conflict','closed','media-unavailable','media-invalid','media-failed','background-failed','background-unresolved','background-unavailable','background-limit']).nullable()}).strict()
 /** File events have a fixed monotonic schema and validate before becoming operator observations. */
-export const eventSchema:z.ZodType<JournalEvent>=z.discriminatedUnion('type',[
+export const eventSchema:z.ZodType<JournalEvent>=z.union([
  z.object({type:z.literal('created'),schema:z.literal(1),runId:runIdSchema,scenario:scenarioSchema,fingerprint:z.string().regex(/^[a-f0-9]{64}$/),time:z.number().int().nonnegative()}).strict(),
+ z.object({type:z.literal('created'),schema:z.literal(2),runId:runIdSchema,scenario:scenarioSchema,fingerprint:z.string().regex(/^[a-f0-9]{64}$/),time:z.number().int().nonnegative(),backgroundProviders:z.array(z.string().transform(backgroundProviderId)),requiredBackgroundProviders:z.array(z.string().transform(backgroundProviderId))}).strict(),
  z.object({type:z.literal('input'),inputId:alias,time:z.number().int().nonnegative()}).strict(),
  z.object({type:z.literal('dispatch'),inputId:alias,report:z.object({accepted:z.number().int().nonnegative(),failed:z.number().int().nonnegative()}).strict(),time:z.number().int().nonnegative()}).strict(),
  z.object({type:z.literal('capture'),capture:z.object({operationId:z.string().min(1),conversation:alias,kind:z.enum(['group','private']),parts:z.array(part),messageId:z.string().min(1),originals:z.array(originalSchema).optional()}).strict(),time:z.number().int().nonnegative()}).strict(),
  z.object({type:z.literal('media-grant'),grant:grantSchema,time:z.number().int().nonnegative()}).strict(),
+ z.object({type:z.literal('background'),provider:z.string().transform(backgroundProviderId),stage:z.number().int().nonnegative(),tasks:z.array(z.object({id:z.string().transform(backgroundTaskId),conversation:alias,execution:z.enum(['queued','running','completed','failed','uncertain','cancelled']),outputs:z.object({pending:z.number().int().nonnegative(),sending:z.number().int().nonnegative(),accepted:z.number().int().nonnegative(),failed:z.number().int().nonnegative(),uncertain:z.number().int().nonnegative(),cancelled:z.number().int().nonnegative()}).strict()}).strict()),time:z.number().int().nonnegative()}).strict(),
  z.object({type:z.literal('ended'),result,time:z.number().int().nonnegative()}).strict(),
 ])

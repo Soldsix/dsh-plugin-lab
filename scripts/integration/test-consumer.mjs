@@ -8,13 +8,14 @@ import ts from 'typescript'
 import {verifyInstalledArchive} from './verify-installed.mjs'
 const root=fileURLToPath(new URL('../../',import.meta.url)),args=process.argv,index=args.indexOf('--im-kit-archive')
 assert.ok(index>=0&&args[index+1],'Pass --im-kit-archive PATH');assert.ok(process.env.npm_execpath,'Run through npm run test:consumer')
-const manifest=JSON.parse(await readFile(join(root,'package.json'),'utf8')),library=await realpath(args[index+1])
+const manifest=JSON.parse(await readFile(join(root,'package.json'),'utf8')),library=await realpath(args[index+1]),jobIndex=args.indexOf('--job-archive')
+assert.ok(jobIndex>=0&&args[jobIndex+1],'Pass --job-archive PATH');const job=await realpath(args[jobIndex+1])
 const runs=join(root,'.test-artifacts','consumer');await mkdir(runs,{recursive:true})
 const resume=args.indexOf('--resume-run'),resumed=resume>=0
 const area=resumed?await realpath(args[resume+1]):await mkdtemp(join(runs,'run-'))
 const owned=relative(runs,area);assert.ok(!owned.startsWith('..')&&!isAbsolute(owned),'Resume target must stay in this repository consumer-test directory')
 const attempt=await mkdtemp(join(area,'attempt-')),archives=[]
-for(const path of[library,join(root,'artifacts',manifest.name+'-'+manifest.version+'.tgz')]){const target=join(attempt,basename(path));await copyFile(path,target);archives.push(target)}
+for(const path of[library,join(root,'artifacts',manifest.name+'-'+manifest.version+'.tgz'),job]){const target=join(attempt,basename(path));await copyFile(path,target);archives.push(target)}
 if(!resumed)await writeFile(join(area,'package.json'),JSON.stringify({name:'isolated-plugin-lab-consumer',private:true,type:'module',overrides:manifest.overrides},null,2)+'\n')
 const env=Object.fromEntries(Object.entries(process.env).filter(([key])=>!/KEY|SECRET|TOKEN|PASSWORD/i.test(key)))
 await mkdir(join(attempt,'temp'),{recursive:true});Object.assign(env,{NPM_CONFIG_CACHE:join(root,'.npm-cache'),TEMP:join(attempt,'temp'),TMP:join(attempt,'temp')})
@@ -28,7 +29,7 @@ async function run(argv){
  records.push({argv,code,signal,timedOut:timeout.aborted,stdout,stderr});await writeFile(join(attempt,'commands.json'),JSON.stringify(records,null,2)+'\n')
  if(failure)throw failure;assert.equal(code,0,stderr.slice(-1800));return stdout
 }
-const peers=Object.entries(manifest.peerDependencies).filter(([name])=>name!=='dsh-im-kit').map(([name,version])=>name+'@'+version)
+const peers=Object.entries(manifest.peerDependencies).filter(([name])=>!['dsh-im-kit','dsh-job-delivery'].includes(name)).map(([name,version])=>name+'@'+version)
 if(!resumed||args.includes('--reinstall'))await run([process.env.npm_execpath,'install','--ignore-scripts','--no-audit','--no-fund','--package-lock=false','--cache',join(root,'.npm-cache'),...archives,...peers,'@deepseek-ai/dsh@0.2.2-rc.1','@types/node@24.0.0','@types/react@18.3.28','@types/react-dom@18.3.7'])
 const installed=await verifyInstalledArchive(archives[1],join(area,'node_modules','dsh-plugin-lab'),join(attempt,'installed-files.json'))
 const consumer=join(attempt,'consumer.ts')
@@ -37,13 +38,16 @@ import type {Context} from '@deepseek-ai/cordis'
 import {Config,type RunAdmission,type RunResult} from 'dsh-plugin-lab'
 import type {LabControl} from 'dsh-plugin-lab/control'
 import type * as Client from 'dsh-plugin-lab/client'
+import {createJobDeliveryObserver} from 'dsh-plugin-lab/job-delivery'
+import type {JobDeliveryService} from 'dsh-job-delivery'
 const config=z.resolve({enabled:false},Config,{})[0]
 const enabled:boolean=config.enabled
 const start:Context['imLab']['start']=(value,signal)=>Promise.reject(new Error('type check only'))
+const observer=(service:JobDeliveryService)=>createJobDeliveryObserver(service)
 type OwnerDescribe=LabControl['describe']
 type NativeClient=typeof Client
 type Outcome=RunResult['phase']
-void enabled;void start
+void enabled;void start;void observer
 export type {OwnerDescribe,NativeClient,Outcome,RunAdmission}
 `)
 const program=ts.createProgram([consumer],{strict:true,noEmit:true,target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.NodeNext,moduleResolution:ts.ModuleResolutionKind.NodeNext,types:['node'],typeRoots:[join(area,'node_modules','@types')],lib:['lib.es2022.d.ts','lib.dom.d.ts'],skipLibCheck:false,allowImportingTsExtensions:true})

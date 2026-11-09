@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-lab",
-  "version": "0.1.0-development",
+  "version": "0.2.0-development",
   "description": "Run synthetic messaging scenarios through installed DSH consumers and capture outbound messages locally.",
   "type": "module",
   "license": "MIT",
@@ -24,6 +24,10 @@
     "./client": {
       "types": "./dist/client/index.d.ts",
       "default": "./dist/client.js"
+    },
+    "./job-delivery": {
+      "types": "./dist/job-delivery.d.ts",
+      "import": "./dist/job-delivery.js"
     }
   },
   "files": [
@@ -58,7 +62,8 @@
     "@deepseek-ai/dsh-client-connection": "0.2.2-rc.1",
     "@deepseek-ai/dsh-config-editor": "0.2.2-rc.1",
     "@deepseek-ai/dsh-typert-protocol": "0.2.2-rc.1",
-    "@deepseek-ai/schemastery": "~3.19.0"
+    "@deepseek-ai/schemastery": "~3.19.0",
+    "dsh-job-delivery": "0.2.0-development"
   },
   "dependencies": {
     "dsh-im-kit": "https://github.com/Soldsix/dsh-im-kit/releases/download/v0.2.1/dsh-im-kit-0.2.1.tgz",
@@ -98,7 +103,12 @@
     "sharp": "0.35.5",
     "typescript": "5.9.3",
     "yaml": "2.9.1",
-    "zustand": "~4.5.7"
+    "zustand": "~4.5.7",
+    "dsh-job-delivery": "https://github.com/Soldsix/dsh-job-delivery/releases/download/v0.2.0-development/dsh-job-delivery-0.2.0-development.tgz",
+    "@deepseek-ai/dsh-jobs-local": "0.2.2-rc.1",
+    "@deepseek-ai/dsh-storage": "0.2.2-rc.1",
+    "@deepseek-ai/dsh-storage-json": "0.2.2-rc.1",
+    "@deepseek-ai/dsh-storage-domain": "0.2.2-rc.1"
   },
   "overrides": {
     "zod": "4.6.6",
@@ -125,5 +135,10 @@
   "homepage": "https://github.com/Soldsix/dsh-plugin-lab",
   "bugs": {
     "url": "https://github.com/Soldsix/dsh-plugin-lab/issues"
+  },
+  "peerDependenciesMeta": {
+    "dsh-job-delivery": {
+      "optional": true
+    }
   }
 }

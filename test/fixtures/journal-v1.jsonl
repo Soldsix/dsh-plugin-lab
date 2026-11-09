@@ -1,0 +1,4 @@
+{"type":"created","schema":1,"runId":"legacy-synthetic-run-0001","scenario":{"title":"Version-one synthetic evidence","actors":["alice"],"conversations":[{"id":"lounge","kind":"group"}],"stages":[{"inputs":[{"id":"first","actor":"alice","conversation":"lounge","text":"legacy synthetic source","directed":true}]}]},"fingerprint":"de8d0ad008da321dc408dc7c0c5a57968a86d21b86c115f751b30bb8cc308f8e","time":1}
+{"type":"input","inputId":"first","time":2}
+{"type":"dispatch","inputId":"first","report":{"accepted":1,"failed":0},"time":3}
+{"type":"ended","result":{"runId":"legacy-synthetic-run-0001","phase":"completed","replayed":false,"inputCount":1,"consumerFailures":0,"unhandledInputs":0,"captureCount":0,"unresolvedMedia":0,"failure":null},"time":4}

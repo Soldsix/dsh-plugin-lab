@@ -8,11 +8,12 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Exercise staged conversations with synthetic identities, retain complete source cases before computation, and capture structured outbound messages locally. Native owner controls manage background cases and original downloads. Optional media preserves exact images, audio, video and files through scoped native attachments, with browser uploads and previews. Installed consumers supply models and tools. This remains a development package: merged forwards, background-job draining and external-write capture are pending.
+Exercise staged conversations with synthetic identities, retain complete source cases before computation, and capture structured outbound messages locally. Native owner controls manage background cases and original downloads. Optional media preserves exact images, audio, video and files through scoped native attachments, with browser uploads and previews. Installed consumers supply models and tools. Optional durable-job observation waits for final outcomes and cleanup. Merged forwards and external-write capture remain pending.
 
 ## Table of Contents
 
 - [Current use and scope](#current-use-and-scope)
+- [Background work](#background-work)
 - [Native owner page](#native-owner-page)
 - [Scenario example](#scenario-example)
 - [Original media](#original-media)
@@ -20,10 +21,31 @@ Exercise staged conversations with synthetic identities, retain complete source 
 - [Model Experience](#model-experience)
 - [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
 
+<a id="background-work"></a>
+## Background work
+
+The optional dsh-plugin-lab/job-delivery component requires dsh-job-delivery 0.2.0-development in the same dedicated profile. Install that bundle first and configure its native jobs and domain storage. Enable the observer row and require it in the runtime settings; it is disabled by default and text/media cases do not require the task package. Example profile overlay:
+
+```yaml
+- id: plugin-lab-runtime
+  config:
+    enabled: true
+    requiredBackgroundProviders: job-delivery
+- id: plugin-lab-job-delivery
+  disabled: false
+- id: job-delivery
+  config:
+    enabled: true
+```
+
+Every stage waits for its newly admitted tasks and actual worker cleanup before a later stage can quote the captured output. Reports retain selected and required observer IDs and complete task-state counts without task input bodies. Missing observers fail before dispatch. Failed, cancelled and uncertain outcomes remain explicit; no automatic retries or generation replay occur. Cancellation stops and joins owned work before capture closes. Only exact synthetic run scopes may be observed, and preexisting tasks are refused without mutation.
+
+maxBackgroundProviders and maxBackgroundTasks bound registrations and per-case observations. requiredBackgroundProviders is a comma-separated list of installed IDs. Custom Host observers use registerBackground and provide stage settlement plus joined cleanup. They must admit child work before their own completion; detached work started after completion is outside this guarantee. New reports use schema 2; immutable schema-1 reports remain readable without replay or migration. See the [upgrade guide](https://github.com/Soldsix/dsh-plugin-lab/blob/main/docs/upgrade-guide/v0.1.0-development/background-capture/guide.md).
+
 <a id="current-use-and-scope"></a>
 ## Current use and scope
 
-The development bundle targets DSH 0.2.2-rc.1 and Node ^22.19 or >=24. It uses independent dsh-im-kit 0.2.1 and dsh-media-kit 0.2.0 libraries plus the Host attachment capability. It is disabled by default and requires a dedicated profile without another IM provider. Each run binds synthetic actors, peers and a separate account. An installed consumer such as dsh-qq-chat supplies actual chat behavior; the lab implements no model client or live QQ sender.
+The development bundle targets DSH 0.2.2-rc.1, whose published Host requires Node >=24.9.0; Node 22 checks are compatibility probes. It uses independent dsh-im-kit 0.2.1 and dsh-media-kit 0.2.0 libraries plus the Host attachment capability. It is disabled by default and requires a dedicated profile without another IM provider. Each run binds synthetic actors, peers and a separate account. An installed consumer such as dsh-qq-chat supplies actual chat behavior; the lab implements no model client or live QQ sender.
 
 Isolated SDK and Web profiles install the tarballs through the normal DSH plugin manager; no production profile is imported. After installing peer dependencies, `npm run check` builds and tests the source. Building initializes the archive destination; `npm pack --pack-destination artifacts` creates the package used by the integration scripts. The Host service offers `run`, background `start`, `wait`, `cancel`, `inspect`, `list`, `export` and metadata-only `status`. A missing consumer is an explicit failure.
 
@@ -31,7 +53,7 @@ Install the development release in a dedicated profile, then install the consume
 
 ```sh
 dsh --profile qq-lab --from-default-profile web --dump-config
-dsh plugin --profile qq-lab add https://github.com/Soldsix/dsh-plugin-lab/releases/download/v0.1.0-development/dsh-plugin-lab-0.1.0-development.tgz
+dsh plugin --profile qq-lab add https://github.com/Soldsix/dsh-plugin-lab/releases/download/v0.2.0-development/dsh-plugin-lab-0.2.0-development.tgz
 dsh --profile qq-lab --no-open
 ```
 
@@ -42,7 +64,7 @@ The bundle adds a controller and a disabled runtime row. In DSH Web, open Plugin
 
 Paste a scenario into Scenario JSON and start a new case. Admission returns after the complete source is flushed, then execution continues when the page closes or reloads. Stored reports can be selected, inspected and explicitly cancelled. The page shows bounded text previews and marks omitted captures or text. Download full original report streams the exact retained JSONL through the native owner-authenticated connection; it accepts only a run ID, never a filesystem path. Runtime disposal aborts and joins its cases, and controller disposal joins its owned runs and downloads.
 
-Run `npm run test:native -- --im-kit-archive <library.tgz> --chat-archive <chat.tgz> --media-archive <media.tgz>` for installed SDK integration, or `npm run test:web -- --im-kit-archive <library.tgz> --chat-archive <chat.tgz> --media-archive <media.tgz> --browser-cache <playwright-browsers>` for a fresh headless Web profile. Real API checks use `npm run test:real-api -- --im-kit-archive <library.tgz> --chat-archive <chat.tgz> --credential-store <managed-credentials.yaml>` with the configured official DeepSeek credential read-only. These tests send no QQ messages and perform no Bilibili writes; third-party code installed by an operator is not sandboxed by the lab.
+Run `npm run test:native -- --im-kit-archive <library.tgz> --chat-archive <chat.tgz> --media-archive <media.tgz> --job-archive <job.tgz>` for installed SDK integration, or `npm run test:web -- --im-kit-archive <library.tgz> --chat-archive <chat.tgz> --media-archive <media.tgz> --job-archive <job.tgz> --browser-cache <playwright-browsers>` for a fresh headless Web profile. Real API checks use `npm run test:real-api -- --im-kit-archive <library.tgz> --chat-archive <chat.tgz> --credential-store <managed-credentials.yaml>` with the configured official DeepSeek credential read-only. These tests send no QQ messages and perform no Bilibili writes; third-party code installed by an operator is not sandboxed by the lab.
 
 A DSH Host profile must provide its declared non-optional peer dependencies. Isolated SDK/Web verification uses a pinned pnpm and completes test-profile dependencies from installed DSH package declarations; it neither borrows ancestor dependencies nor changes production profiles.
 
@@ -136,7 +158,7 @@ This package registers no model tool and does not add a prompt or request its ow
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- Local tests cover original media, three concurrent 15-actor cases, owner permissions, cancellation, durable background cases, original downloads and browser upload/preview/decode. They do not prove natural dialogue, OCR identity accuracy, synthesis quality or complete application behavior.
+- Local tests cover original media, three concurrent 15-actor cases, owner permissions, cancellation, durable background cases, original downloads and browser upload/preview/decode. Actual installed-job cases additionally cover admission-only producers, output quotes and joined cancellation. They do not prove natural dialogue, OCR identity accuracy, synthesis quality or complete application behavior.
 - Earlier real DeepSeek text smokes cover context recall, arithmetic and retained public replies. This media checkpoint uses controlled local model fixtures and real native attachment APIs, not new upstream model calls. Repository CI exercises Windows/Linux packages and native profiles plus Linux Web; Desktop and real QQ delivery remain unverified.
-- Merged forwards, final QQ encoding, background-job draining and captured platform writes need additional adapters. Arbitrary trusted Host code is not sandboxed, and this package does not silently block or capture its direct external writes.
+- Merged forwards, final QQ encoding, captured platform writes need additional adapters. Arbitrary trusted Host code is not sandboxed, and this package does not silently block or capture its direct external writes.
 - Owner reports retain full source text, source bytes and native receipts locally without encryption. Control operations and downloads reject non-owners even with global Remote permissions. Core Host hot-replacement limits documented by Chat also apply.

@@ -32,7 +32,7 @@ function settings(value:unknown):Settings{
 }
 function decode<T>(schema:{parse(value:unknown):T},value:unknown):T{try{return schema.parse(value)}catch(error){throw problem('request-invalid')}}
 function sanitized(error:unknown):RemoteError<'im-lab/control'>{
- if(error instanceof LabError&&['capacity','source-conflict','journal-unavailable','journal-limit','journal-invalid','invalid-scenario','closed','cancelled','media-unavailable','media-invalid','media-failed'].includes(error.code))return problem(error.code as ControlFailure)
+ if(error instanceof LabError&&['capacity','source-conflict','journal-unavailable','journal-limit','journal-invalid','invalid-scenario','closed','cancelled','media-unavailable','media-invalid','media-failed','background-failed','background-unresolved','background-unavailable','background-limit'].includes(error.code))return problem(error.code as ControlFailure)
  return problem('apply-failed')
 }
 

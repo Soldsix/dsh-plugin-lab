@@ -12,5 +12,5 @@ test('clean checkout preparation creates the archive destination and preserves s
  await writeFile(join(root,'dist','old.js'),'old synthetic build\n');await writeFile(join(root,'evidence','source.txt'),'retained synthetic source\n')
  await copyFile(fileURLToPath(new URL('../scripts/prepare-build.mjs',import.meta.url)),join(root,'scripts','prepare-build.mjs'))
  await promisify(execFile)(process.execPath,[join(root,'scripts','prepare-build.mjs')],{cwd:root,windowsHide:true})
- assert.equal((await stat(join(root,'artifacts'))).isDirectory(),true);await assert.rejects(stat(join(root,'dist')),error=>error.code==='ENOENT');assert.equal(await readFile(join(root,'evidence','source.txt'),'utf8'),'retained synthetic source\n')
+ assert.equal((await stat(join(root,'artifacts'))).isDirectory(),true);assert.equal(await readFile(join(root,'dist','old.js'),'utf8'),'old synthetic build\n');assert.equal(await readFile(join(root,'evidence','source.txt'),'utf8'),'retained synthetic source\n')
 })

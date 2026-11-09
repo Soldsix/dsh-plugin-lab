@@ -8,11 +8,12 @@ kind: "package-bundle"
 
 ## 概要
 
-用合成身份运行分阶段对话，计算前保留完整来源，并在本地捕获结构化出站消息。原生所有者页面管理后台用例与原件下载；可选媒体功能通过范围绑定的原生附件保留图片、音频、视频和文件，支持浏览器导入与预览。模型和工具由已安装的消费插件提供。本包仍在开发，合并转发、后台任务等待和外部写入捕获尚未完成。
+用合成身份运行分阶段对话，计算前保留完整来源，并在本地捕获结构化出站消息。原生所有者页面管理后台用例与原件下载；可选媒体功能通过范围绑定的原生附件保留图片、音频、视频和文件，支持浏览器导入与预览。模型和工具由已安装消费插件提供。可选持久任务观察会等待最终结果和清理；合并转发与外部写入捕获仍待完成。
 
 ## 目录
 
 - [当前用法与范围](#current-use-and-scope)
+- [后台工作](#background-work)
 - [原生所有者页面](#native-owner-page)
 - [用例示例](#scenario-example)
 - [媒体原件](#original-media)
@@ -20,10 +21,31 @@ kind: "package-bundle"
 - [模型体验](#model-experience)
 - [已知限制与待完成工作](#known-limitations-and-deferred-work)
 
+<a id="background-work"></a>
+## 后台工作
+
+可选 dsh-plugin-lab/job-delivery 组件要求同一独立 profile 安装 dsh-job-delivery 0.2.0-development。先安装该 bundle 并配置原生作业与域存储，再启用观察器条目并在运行时声明必需；观察器默认关闭，纯文字/媒体用例不要求任务包。profile 覆盖示例：
+
+```yaml
+- id: plugin-lab-runtime
+  config:
+    enabled: true
+    requiredBackgroundProviders: job-delivery
+- id: plugin-lab-job-delivery
+  disabled: false
+- id: job-delivery
+  config:
+    enabled: true
+```
+
+每阶段等待新受理的任务与实际工作清理结束，后续阶段才能引用捕获的输出。报告保留选中/必须的观察器 ID 和完整任务状态计数，不含任务输入正文。缺少观察器在投递前失败；失败、取消与不确定状态明确保留，不自动重试或重放生成。取消时先停止并等待所属工作再关闭捕获。只观察精确匹配的合成运行范围，发现已有任务则拒绝且不修改。
+
+maxBackgroundProviders 和 maxBackgroundTasks 分别限制观察器注册与每用例任务观察数；requiredBackgroundProviders 是已安装 ID 的逗号分隔列表。自定义 Host 观察器通过 registerBackground 提供阶段等待和清理等待；子工作必须在父任务完成前受理，完成后另启的脱离工作不在保证范围。新报告使用 schema 2，不可变 schema 1 报告仍可读取，不重放、不迁移。见[升级指南](https://github.com/Soldsix/dsh-plugin-lab/blob/main/docs/upgrade-guide/v0.1.0-development/background-capture/guide.zh.md)。
+
 <a id="current-use-and-scope"></a>
 ## 当前用法与范围
 
-开发版目标为 DSH 0.2.2-rc.1、Node ^22.19 或 >=24，使用独立 dsh-im-kit 0.2.1、dsh-media-kit 0.2.0 及宿主附件能力。默认关闭，须使用不含其他 IM 提供方的独立 profile。每个用例绑定虚拟参与者、会话和独立账号。dsh-qq-chat 等已安装消费插件提供真实聊天行为，实验室本身没有模型客户端或真实 QQ 发送器。
+开发版目标为 DSH 0.2.2-rc.1，其公开 Host 要求 Node >=24.9.0；Node 22 仅作兼容性观测，使用独立 dsh-im-kit 0.2.1、dsh-media-kit 0.2.0 及宿主附件能力。默认关闭，须使用不含其他 IM 提供方的独立 profile。每个用例绑定虚拟参与者、会话和独立账号。dsh-qq-chat 等已安装消费插件提供真实聊天行为，实验室本身没有模型客户端或真实 QQ 发送器。
 
 隔离 SDK 与 Web profile 通过正常 DSH 插件管理器安装压缩包，不导入生产 profile。安装 peer 依赖后，`npm run check` 构建并测试源码；构建会初始化发行目录，`npm pack --pack-destination artifacts` 生成整合脚本使用的包。Host 服务提供 `run`、后台 `start`、`wait`、`cancel`、`inspect`、`list`、`export` 及只含元数据的 `status`。没有消费者时明确失败。
 
@@ -31,7 +53,7 @@ kind: "package-bundle"
 
 ```sh
 dsh --profile qq-lab --from-default-profile web --dump-config
-dsh plugin --profile qq-lab add https://github.com/Soldsix/dsh-plugin-lab/releases/download/v0.1.0-development/dsh-plugin-lab-0.1.0-development.tgz
+dsh plugin --profile qq-lab add https://github.com/Soldsix/dsh-plugin-lab/releases/download/v0.2.0-development/dsh-plugin-lab-0.2.0-development.tgz
 dsh --profile qq-lab --no-open
 ```
 
@@ -42,7 +64,7 @@ dsh --profile qq-lab --no-open
 
 将用例粘贴到“用例 JSON”后开始新用例。完整原文刷盘后返回受理结果，页面关闭或刷新后继续执行。已保存报告可以选择、查看及显式取消。页面展示有上限的文字预览，并标明未展示的捕获或文字。“下载完整原始报告”通过原生所有者认证连接流式返回原始 JSONL，只接受运行 ID，不接受文件路径。运行时卸载会取消并等待其用例结束；控制器卸载会等待自己持有的用例和下载结束。
 
-使用 `npm run test:native -- --im-kit-archive <library.tgz> --chat-archive <chat.tgz> --media-archive <media.tgz>` 验证安装后的 SDK 整合；使用 `npm run test:web -- --im-kit-archive <library.tgz> --chat-archive <chat.tgz> --media-archive <media.tgz> --browser-cache <playwright-browsers>` 验证全新无头 Web profile。真实 API 检查使用 `npm run test:real-api -- --im-kit-archive <library.tgz> --chat-archive <chat.tgz> --credential-store <managed-credentials.yaml>`，只读已配置的 DeepSeek 官方凭据。这些测试不发 QQ 消息、不执行 B 站写入；实验室不对操作者安装的第三方代码提供沙箱。
+使用 `npm run test:native -- --im-kit-archive <library.tgz> --chat-archive <chat.tgz> --media-archive <media.tgz> --job-archive <job.tgz>` 验证安装后的 SDK 整合；使用 `npm run test:web -- --im-kit-archive <library.tgz> --chat-archive <chat.tgz> --media-archive <media.tgz> --job-archive <job.tgz> --browser-cache <playwright-browsers>` 验证全新无头 Web profile。真实 API 检查使用 `npm run test:real-api -- --im-kit-archive <library.tgz> --chat-archive <chat.tgz> --credential-store <managed-credentials.yaml>`，只读已配置的 DeepSeek 官方凭据。这些测试不发 QQ 消息、不执行 B 站写入；实验室不对操作者安装的第三方代码提供沙箱。
 
 DSH Host profile 必须先具备其公开声明的非可选 peer 依赖。隔离 SDK/Web 验收脚本使用固定版本 pnpm，并按已安装 DSH 包的声明补齐测试 profile 依赖；不会借用父目录依赖，也不会改动生产 profile。
 
@@ -136,7 +158,7 @@ DSH Host profile 必须先具备其公开声明的非可选 peer 依赖。隔离
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- 本地测试覆盖原件媒体、三个并发的 15 人用例、所有者权限、取消、持久后台用例、原件下载及浏览器导入/预览/解码，不能证明自然对话、OCR 或身份准确率、合成质量或整套应用行为。
+- 本地测试覆盖原件媒体、三个并发的 15 人用例、所有者权限、取消、持久后台用例、原件下载及浏览器导入/预览/解码，实际安装的任务场景另验证只返回受理的生产者、产物引用和取消清理等待；不能证明自然对话、OCR 或身份准确率、合成质量或整套应用行为。
 - 早期真实 DeepSeek 文字冒烟覆盖上下文回忆、算术和公开回复留存；本轮媒体使用受控本地模型与真实原生附件 API，没有新增上游模型调用。仓库 CI 检查 Windows/Linux 发行包与原生 profile，以及 Linux Web；桌面和真实 QQ 投送尚未验收。
-- 合并转发、QQ 最终编码、后台任务等待和平台写入捕获仍需适配器。本包不隔离任意可信宿主代码，也不会静默阻断或捕获其直接外部写入。
+- 合并转发、QQ 最终编码和平台写入捕获仍需适配器。本包不隔离任意可信宿主代码，也不会静默阻断或捕获其直接外部写入。
 - 所有者报告在本地未加密保留完整正文、来源字节和原生回执；即使非所有者拥有全局 Remote 权限，控制操作与下载也会拒绝。Chat 已披露的宿主核心热替换限制同样适用。

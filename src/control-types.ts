@@ -24,7 +24,7 @@ export interface MediaPreview extends Omit<CapturedOriginal,'partIndex'>{}
 /** Lifecycle and preview do not assert model quality or media byte verification. */
 export interface InspectResponse{readonly result:RunResult;readonly active:boolean;readonly incompleteTail:boolean;readonly captures:readonly CapturePreview[];readonly omittedCaptures:number;readonly originals:readonly MediaPreview[];readonly omittedOriginals:number}
 /** Stable operation errors contain no native path or upstream response text. */
-export type ControlFailure='forbidden'|'cancelled'|'request-invalid'|'config-invalid'|'revision-conflict'|'entry-unavailable'|'runtime-unavailable'|'busy'|'apply-failed'|'invalid-scenario'|'capacity'|'source-conflict'|'journal-unavailable'|'journal-limit'|'journal-invalid'|'closed'|'media-unavailable'|'media-invalid'|'media-failed'
+export type ControlFailure='forbidden'|'cancelled'|'request-invalid'|'config-invalid'|'revision-conflict'|'entry-unavailable'|'runtime-unavailable'|'busy'|'apply-failed'|'invalid-scenario'|'capacity'|'source-conflict'|'journal-unavailable'|'journal-limit'|'journal-invalid'|'closed'|'media-unavailable'|'media-invalid'|'media-failed'|'background-failed'|'background-unresolved'|'background-unavailable'|'background-limit'
 declare module '@deepseek-ai/dsh-typert-protocol/types'{interface RemoteErrorDetailsMap{
  /** Owner-safe lab control failure. */
  'im-lab/control':{readonly reason:ControlFailure}

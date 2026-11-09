@@ -118,7 +118,7 @@ function ConfigurationPage({t,read,save,restart,start,cancel,list,inspect,notify
  const canStart=applied&&snapshot.config.enabled&&!dirty&&!busy
  return<section className="imlab-page">
   <p className="imlab-help">{t('intro')}</p>
-  <section className="imlab-status" aria-live="polite"><strong>{!snapshot.config.enabled?t('disabled'):applied?t('applied'):t('notApplied')}</strong><p>{t('active',{count:active})}</p>{snapshot.runtime?.lastFailure&&<p>{t('diagnostic',{code:snapshot.runtime.lastFailure.code})}</p>}</section>
+  <section className="imlab-status" aria-live="polite"><strong>{!snapshot.config.enabled?t('disabled'):applied?t('applied'):t('notApplied')}</strong><p>{t('active',{count:active})}</p>{snapshot.runtime&&<p>{t('backgroundObservers',{providers:snapshot.runtime.backgroundProviders.join(', ')||'—'})}</p>}{snapshot.runtime?.lastFailure&&<p>{t('diagnostic',{code:snapshot.runtime.lastFailure.code})}</p>}</section>
   {loadFailed&&<p role="alert">{t('loadFailed')}</p>}
   <form onSubmit={event=>{event.preventDefault();void write('save')}}>
    <fieldset><legend>{t('settings')}</legend>{['enabled','namespace','dataPath','maxConcurrentRuns'].map(key=>field(key as ConfigKey))}</fieldset>

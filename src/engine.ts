@@ -14,9 +14,11 @@ import {LabError,failureCode,mediaFailure} from './errors.ts'
 import {RunJournal,summarize} from './journal.ts'
 import {CaptureTransport} from './capture.ts'
 import {scenarioFingerprint,labAccount,labScope} from './identity.ts'
+import {backgroundFailure,type BackgroundProvider,type BackgroundProviderId,type BackgroundRun} from './background.ts'
 
 const request=z.object({runId:runIdSchema,scenario:z.unknown()}).strict()
 interface Active{readonly digest:string;readonly controller:AbortController;readonly done:Promise<RunResult>;readonly admission:Promise<RunAdmission>}
+interface BackgroundRegistration{readonly provider:BackgroundProvider;readonly runs:Set<RunId>;closing:boolean;disposal?:Promise<void>}
 
 /** The engine never implements a second model runner or sends a live QQ request. */
 export class LabEngine{
@@ -24,6 +26,7 @@ export class LabEngine{
  private readonly active=new Map<RunId,Active>()
  private readonly journals=new Map<RunId,RunJournal>()
  private readonly mediaReads=new Set<Promise<OriginalMedia>>()
+ private readonly backgrounds=new Map<BackgroundProviderId,BackgroundRegistration>()
  private lastFailure:EngineStatus['lastFailure']=null
  private stopping:Promise<void>|undefined
  private constructor(private readonly config:Spec,private readonly im:ImRuntime,private readonly media:LabMediaServices|undefined){}
@@ -38,7 +41,13 @@ export class LabEngine{
  /** Actual parsed operator revision, before profile-local storage resolution. */
  get configRevision():string{return this.config.operatorRevision}
  /** @returns active identities, shutdown state and safe failure metadata without source bodies. */
- status():EngineStatus{return{active:this.active.size,activeRunIds:[...this.active.keys()],stopping:this.lifetime.signal.aborted,lastFailure:this.lastFailure}}
+ status():EngineStatus{return{active:this.active.size,activeRunIds:[...this.active.keys()],backgroundProviders:[...this.backgrounds.keys()].sort(),stopping:this.lifetime.signal.aborted,lastFailure:this.lastFailure}}
+ /** @param provider - installed observer for explicitly scoped asynchronous work. @returns disposer that stops new cases and cancels and joins cases already using this observer. */
+ registerBackground(provider:BackgroundProvider):()=>Promise<void>{
+  if(this.lifetime.signal.aborted)throw new LabError('closed');if(this.backgrounds.has(provider.id))throw new LabError('background-unavailable');if(this.backgrounds.size>=this.config.maxBackgroundProviders)throw new LabError('background-limit')
+  const entry:BackgroundRegistration={provider,runs:new Set(),closing:false};this.backgrounds.set(provider.id,entry)
+  return()=>entry.disposal??=(async()=>{entry.closing=true;this.backgrounds.delete(provider.id);const active=[...entry.runs].flatMap(id=>{const run=this.active.get(id);return run?[run]:[]});for(const run of active)run.controller.abort();await Promise.allSettled(active.map(run=>run.done))})()
+ }
  /**
   * Submit owner JSON through installed consumers, retaining the original complete case.
   * @param value - strict run identity and synthetic scenario, never live destinations.
@@ -67,9 +76,12 @@ export class LabEngine{
   let accept!:(value:RunAdmission)=>void,rejectAdmission!:(error:unknown)=>void
   const admission=new Promise<RunAdmission>((resolve,reject)=>{accept=resolve;rejectAdmission=reject})
   void admission.catch((_error:unknown)=>{/* run() observes failure through done; start() observes admission. */})
-  const done=Promise.resolve().then(()=>this.execute(runId,scenario,combined,accept)).catch(error=>{rejectAdmission(error);throw error})
+  const observers=[...this.backgrounds.values()].sort((a,b)=>a.provider.id.localeCompare(b.provider.id))
+  const done=Promise.resolve().then(()=>this.execute(runId,scenario,combined,accept,observers)).catch(error=>{rejectAdmission(error);throw error})
   const entry:Active={digest,controller,done,admission};this.active.set(runId,entry)
-  void done.then(result=>{if(result.phase==='failed'&&result.failure)this.lastFailure={runId,code:result.failure};this.active.delete(runId)},error=>{this.lastFailure={runId,code:failureCode(error)};this.active.delete(runId)})
+  for(const observer of observers)observer.runs.add(runId)
+  const release=()=>{this.active.delete(runId);for(const observer of observers)observer.runs.delete(runId)}
+  void done.then(result=>{if(result.phase==='failed'&&result.failure)this.lastFailure={runId,code:result.failure};release()},error=>{this.lastFailure={runId,code:failureCode(error)};release()})
   return{entry,shared:false}
  }
  /**
@@ -118,18 +130,21 @@ export class LabEngine{
   return{scope:{account,kind:conversation.kind,peerId:identifier('im.peer','lab-peer/'+runId+'/'+conversation.id)},messageId:identifier('im.message','lab-in/'+runId+'/'+input.id),senderId:user(input.actor),sentAt:now,receivedAt:now,directedToBot:input.directed,
    parts:[...quotedOutput?[{type:'reply' as const,messageId:identifier('im.message',quotedOutput)}]:[],...input.replyTo?[{type:'reply' as const,messageId:identifier('im.message','lab-in/'+runId+'/'+input.replyTo)}]:[],...input.directed?[{type:'mention' as const,userId:identifier('im.user',account.accountId)}]:[],...input.mentionActor?[{type:'mention' as const,userId:user(input.mentionActor)}]:[],{type:'text',text:input.text},...mediaParts,...input.card?[{type:'card' as const,format:input.card.format,content:input.card.content}]:[]]}
  }
- private async execute(runId:RunId,scenario:Scenario,signal:AbortSignal,admitted:(value:RunAdmission)=>void):Promise<RunResult>{
-  const claim=await RunJournal.claim(this.config,runId,scenario)
+ private async execute(runId:RunId,scenario:Scenario,signal:AbortSignal,admitted:(value:RunAdmission)=>void,observers:readonly BackgroundRegistration[]):Promise<RunResult>{
+  const claim=await RunJournal.claim(this.config,runId,scenario,observers.map(value=>value.provider.id))
   if(!claim.created){admitted({runId,replayed:true});return{...claim.stored.result,replayed:true}}
   admitted({runId,replayed:false});this.journals.set(runId,claim.journal)
   const journal=claim.journal,account=labAccount(this.config.namespace,runId)
   const routing=this.media?.runtime,runMedia=this.config.mediaEnabled&&this.media&&routing?new RunMedia(this.config,{attachments:this.media.attachments,runtime:routing},account,scenario,journal):undefined
   const provider=new CaptureTransport(account,runId,scenario,journal,runMedia?this.media?.runtime:undefined),outputStages:(readonly Pick<Capture,'messageId'|'conversation'>[])[]=[]
   let outputCount=0
+  const backgrounds:{readonly id:BackgroundProviderId;readonly run:BackgroundRun}[]=[],observed=new Set<string>()
   let release:(()=>Promise<void>)|undefined,releaseMedia:(()=>Promise<void>)|undefined,failure:FailureCode|null=null
   try{
    signal.throwIfAborted();if(runMedia&&routing)releaseMedia=routing.register(runMedia.provider);release=this.im.register(provider)
-   for(const stage of scenario.stages){
+   if(this.config.backgroundRequirements.some(id=>!observers.some(observer=>observer.provider.id===id)))throw new LabError('background-unavailable')
+   for(const observer of observers){if(observer.closing)throw new LabError('background-unavailable');try{backgrounds.push({id:observer.provider.id,run:observer.provider.open({runId,scopes:scenario.conversations.map(conversation=>({conversation:conversation.id,scope:labScope(this.config.namespace,runId,conversation)})),maxTasks:this.config.maxBackgroundTasks})})}catch(error){throw new LabError('background-unavailable')}}
+   for(const [stageIndex,stage] of scenario.stages.entries()){
     signal.throwIfAborted()
     const settled=await Promise.allSettled(stage.inputs.map(async input=>{
      signal.throwIfAborted();await journal.append({type:'input',inputId:input.id,time:Date.now()});signal.throwIfAborted()
@@ -140,12 +155,21 @@ export class LabEngine{
      const report=await this.im.publish(this.message(runId,scenario,input,account,quotedOutput,mediaParts),signal)
      await journal.append({type:'dispatch',inputId:input.id,report,time:Date.now()})
     }))
-    const captured=provider.messages();outputStages.push(captured.slice(outputCount));outputCount=captured.length
     for(const outcome of settled)if(outcome.status==='rejected')failure??=signal.aborted?'cancelled':failureCode(outcome.reason)
+    const completions=await Promise.allSettled(backgrounds.map(async background=>({id:background.id,tasks:await background.run.settle(signal)})))
+    for(const completion of completions){
+     if(completion.status==='rejected'){failure??=signal.aborted?'cancelled':completion.reason instanceof LabError?completion.reason.code:'background-unavailable';continue}
+     const {id,tasks}=completion.value
+     if(observed.size+tasks.length>this.config.maxBackgroundTasks){failure??='background-limit';continue}
+     const keys=tasks.map(task=>id+'/'+task.id);if(new Set(keys).size!==keys.length||keys.some(key=>observed.has(key))||tasks.some(task=>!scenario.conversations.some(conversation=>conversation.id===task.conversation))){failure??='background-unavailable';continue}
+     for(const key of keys)observed.add(key)
+     await journal.append({type:'background',provider:id,stage:stageIndex,tasks,time:Date.now()});failure??=backgroundFailure(tasks)
+    }
+    const captured=provider.messages();outputStages.push(captured.slice(outputCount));outputCount=captured.length
     if(failure)break
    }
   }catch(error){failure=signal.aborted?'cancelled':failureCode(error)}
-  finally{try{if(release)await release()}catch(error){failure??=failureCode(error)}try{if(releaseMedia)await releaseMedia();else if(runMedia)await runMedia.provider.dispose()}catch(error){failure??=mediaFailure(error).code}}
+  finally{for(const background of backgrounds)try{await background.run.close()}catch(error){failure??='background-unavailable'}try{if(release)await release()}catch(error){failure??=failureCode(error)}try{if(releaseMedia)await releaseMedia();else if(runMedia)await runMedia.provider.dispose()}catch(error){failure??=mediaFailure(error).code}}
   try{
    const counts=summarize(runId,journal.snapshot())
    failure??=provider.failure()??(counts.consumerFailures?'consumer-failed':counts.unhandledInputs?'no-consumer':null)
@@ -171,5 +195,5 @@ export class LabEngine{
   })();this.mediaReads.add(operation);void operation.then(()=>{this.mediaReads.delete(operation)},()=>{this.mediaReads.delete(operation)});return operation
  }
  /** @returns completion after aborting and joining every active run; the caller still owns IM shutdown. */
- close():Promise<void>{if(this.stopping)return this.stopping;this.lifetime.abort();return this.stopping=(async()=>{await Promise.allSettled([...this.active.values()].map(value=>value.done));await Promise.allSettled([...this.mediaReads])})()}
+ close():Promise<void>{if(this.stopping)return this.stopping;this.lifetime.abort();return this.stopping=(async()=>{await Promise.allSettled([...this.active.values()].map(value=>value.done));await Promise.allSettled([...this.mediaReads]);this.backgrounds.clear()})()}
 }

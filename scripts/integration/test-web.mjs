@@ -4,6 +4,7 @@ import sharp from 'sharp'
 import gifenc from 'gifenc'
 import {pnpmScript} from './pnpm.mjs'
 import {requiredProfilePeers} from './profile-peers.mjs'
+import {releaseInputs} from '../release-spec.mjs'
 import {spawn} from 'node:child_process'
 import {once} from 'node:events'
 import {createServer} from 'node:http'
@@ -16,12 +17,13 @@ import {verifyInstalledArchive} from './verify-installed.mjs'
 
 const root=fileURLToPath(new URL('../../',import.meta.url)),args=process.argv
 const argument=name=>{const index=args.indexOf(name);assert.ok(index>=0&&args[index+1],'Required '+name);return args[index+1]}
-const library=await realpath(argument('--im-kit-archive')),chat=await realpath(argument('--chat-archive')),media=await realpath(argument('--media-archive')),manifest=JSON.parse(await readFile(join(root,'package.json'),'utf8'))
+const library=await realpath(argument('--im-kit-archive')),chat=await realpath(argument('--chat-archive')),media=await realpath(argument('--media-archive')),job=await realpath(argument('--job-archive')),manifest=JSON.parse(await readFile(join(root,'package.json'),'utf8'))
 const runs=join(root,'.test-artifacts','native-web');await mkdir(runs,{recursive:true})
 const resume=args.indexOf('--resume-run'),resumed=resume>=0,area=resumed?await realpath(args[resume+1]):await mkdtemp(join(runs,'install-'))
 const owned=relative(runs,area);assert.ok(!owned.startsWith('..')&&!isAbsolute(owned),'Resume target escaped owned native-test directory')
 const attempt=await mkdtemp(join(area,'attempt-')),home=join(area,'home'),profile='plugin-lab-web',profileRoot=join(home,'profiles',profile),archives=[]
-for(const source of[library,chat,join(root,'artifacts',manifest.name+'-'+manifest.version+'.tgz'),media]){const path=join(attempt,basename(source));await copyFile(source,path);archives.push({path,name:basename(source),sha256:createHash('sha256').update(await readFile(path)).digest('hex')})}
+for(const source of[library,chat,join(root,'artifacts',manifest.name+'-'+manifest.version+'.tgz'),media,job]){const path=join(attempt,basename(source));await copyFile(source,path);archives.push({path,name:basename(source),sha256:createHash('sha256').update(await readFile(path)).digest('hex')})}
+for(const [index,name]of[[0,'dsh-im-kit'],[1,'dsh-qq-chat'],[3,'dsh-media-kit'],[4,'dsh-job-delivery']])assert.equal(archives[index].sha256,releaseInputs.find(input=>input.name===name).sha256,'Public input integrity differs')
 await writeFile(join(attempt,'inputs.json'),JSON.stringify(archives.map(({name,sha256})=>({name,sha256})),null,2)+'\n')
 const captures=[];let active=0,peak=0,holds=0,parallelArrivals=0,releaseParallel
 const parallel=new Promise(resolve=>{releaseParallel=resolve})
@@ -58,27 +60,30 @@ async function run(argv,cwd){
  let stdout='',stderr='',failure;child.stdout.on('data',data=>{stdout+=data});child.stderr.on('data',data=>{stderr+=data});child.once('error',error=>{failure=error})
  const [code,signal]=await new Promise(resolve=>child.once('close',(...values)=>resolve(values)))
  commands.push({argv,code,signal,timedOut:deadline.aborted,stdout,stderr});await writeFile(join(attempt,'installation.json'),JSON.stringify(commands,null,2)+'\n')
- if(failure)throw failure;assert.equal(code,0,stderr.slice(-1400));return stdout
+ if(failure)throw failure;assert.equal(code,0,(stderr+"\n"+stdout).slice(-1800));return stdout
 }
 if(!resumed)await run([dsh,'--profile',profile,'--from-default-profile','web','--dump-config'],area)
-const profileManifest=JSON.parse(await readFile(join(profileRoot,'package.json'),'utf8'));profileManifest.pnpm={...profileManifest.pnpm,overrides:manifest.overrides};await writeFile(join(profileRoot,'package.json'),JSON.stringify(profileManifest,null,2)+'\n')
-await writeFile(join(profileRoot,'.npmrc'),'package-import-method=copy\nstore-dir='+join(root,'.test-artifacts','pnpm-store').replaceAll('\\','/')+'\ncache-dir='+join(root,'.test-artifacts','pnpm-cache').replaceAll('\\','/')+'\n')
+const profileManifest=JSON.parse(await readFile(join(profileRoot,'package.json'),'utf8'));profileManifest.pnpm={...profileManifest.pnpm,overrides:{...manifest.overrides,...Object.fromEntries([0,3].map(index=>[releaseInputs.find(input=>input.file===archives[index].name).name,'file:'+archives[index].path.replaceAll('\\','/')]))}};await writeFile(join(profileRoot,'package.json'),JSON.stringify(profileManifest,null,2)+'\n')
+await writeFile(join(profileRoot,'.npmrc'),'package-import-method=hardlink\nstore-dir='+join(root,'.test-artifacts','pnpm-store').replaceAll('\\','/')+'\ncache-dir='+join(root,'.test-artifacts','pnpm-cache').replaceAll('\\','/')+'\n')
 const pnpm=await pnpmScript(root)
 const peerNames=['@deepseek-ai/cordis@~4.1.0','@deepseek-ai/cordis-plugin-loader@~1.1.0','@deepseek-ai/schemastery@~3.19.0',...['agent','agent-preset-registry','app-boot','brand','llm','session','session-persistence','tools','scope','config-editor','typert-protocol','llm-deepseek-api-key','client-connection'].map(name=>'@deepseek-ai/dsh-'+name+'@0.2.2-rc.1')]
 await run([pnpm,'add',archives[0].path,archives[3].path,'@deepseek-ai/dsh@0.2.2-rc.1',...peerNames,'--ignore-scripts'],profileRoot)
-await run([dsh,'plugin','--profile',profile,'add',archives[1].path],area);await run([dsh,'plugin','--profile',profile,'add',archives[2].path],area)
+await run([dsh,'plugin','--profile',profile,'add',archives[4].path,'--ignore-scripts'],area);await run([dsh,'plugin','--profile',profile,'add',archives[1].path,'--ignore-scripts'],area);await run([dsh,'plugin','--profile',profile,'add',archives[2].path,'--ignore-scripts'],area)
 for(;;){const missing=await requiredProfilePeers(profileRoot);if(!missing.length)break;await run([pnpm,'add',...missing,'--ignore-scripts'],profileRoot)}
-const installedFiles={media:await verifyInstalledArchive(archives[3].path,join(profileRoot,'node_modules','dsh-media-kit'),join(attempt,'media-installed-files.json')),chat:await verifyInstalledArchive(archives[1].path,join(profileRoot,'node_modules','dsh-qq-chat'),join(attempt,'chat-installed-files.json')),lab:await verifyInstalledArchive(archives[2].path,join(profileRoot,'node_modules','dsh-plugin-lab'),join(attempt,'lab-installed-files.json'))}
+const installedFiles={job:await verifyInstalledArchive(archives[4].path,join(profileRoot,'node_modules','dsh-job-delivery'),join(attempt,'job-installed-files.json')),media:await verifyInstalledArchive(archives[3].path,join(profileRoot,'node_modules','dsh-media-kit'),join(attempt,'media-installed-files.json')),chat:await verifyInstalledArchive(archives[1].path,join(profileRoot,'node_modules','dsh-qq-chat'),join(attempt,'chat-installed-files.json')),lab:await verifyInstalledArchive(archives[2].path,join(profileRoot,'node_modules','dsh-plugin-lab'),join(attempt,'lab-installed-files.json'))}
 const browserIndex=args.indexOf('--browser-cache')
 process.env.PLAYWRIGHT_BROWSERS_PATH=browserIndex>=0?await realpath(args[browserIndex+1]):process.env.PLAYWRIGHT_BROWSERS_PATH??join(root,'.test-artifacts','browsers')
 const {chromium}=await import('playwright')
 await copyFile(fileURLToPath(new URL('./media-fixture.mjs',import.meta.url)),join(profileRoot,'lab-media-fixture.mjs'))
+await copyFile(fileURLToPath(new URL('./background-fixture.mjs',import.meta.url)),join(profileRoot,'lab-background-fixture.mjs'))
 const overlay=[
- {id:'plugin-lab-runtime',config:{enabled:false,namespace:'lab-'+basename(attempt).toLowerCase(),dataPath:join(attempt,'lab-data')}},
+ {id:'job-delivery',config:{enabled:true,namespace:'lab_background_'+basename(attempt).toLowerCase().replaceAll('-','_')}},
+ {id:'plugin-lab-job-delivery',disabled:false},
+ {id:'plugin-lab-runtime',config:{enabled:false,requiredBackgroundProviders:'job-delivery',namespace:'lab-'+basename(attempt).toLowerCase(),dataPath:join(attempt,'lab-data')}},
  {id:'plugin-lab-control',config:{statusRefreshMs:250}},
  {id:'qq-chat-runtime',config:{enabled:true,namespace:'lab-chat-'+basename(attempt).toLowerCase(),databasePath:join(attempt,'chat-state.sqlite3'),workspacePath:join(attempt,'workspace'),presetId:'lab-web-fixture',provider:'deepseek-official',model:'deepseek-flash',reasoningEffort:'off',maxTokens:128}},
  {id:'session-title-llm',disabled:true},{id:'session-telemetry-otel',disabled:true},
- {insert:[{id:'lab-media-fixture',name:pathToFileURL(join(profileRoot,'lab-media-fixture.mjs')).href},{id:'lab-preset-fixture',name:'@deepseek-ai/dsh-agent-preset',config:{id:'lab-web-fixture',plugins:[]}}]},
+ {insert:[{id:'lab-background-fixture',name:pathToFileURL(join(profileRoot,'lab-background-fixture.mjs')).href},{id:'lab-media-fixture',name:pathToFileURL(join(profileRoot,'lab-media-fixture.mjs')).href},{id:'lab-preset-fixture',name:'@deepseek-ai/dsh-agent-preset',config:{id:'lab-web-fixture',plugins:[]}}]},
 ]
 await writeFile(join(profileRoot,'cordis.patch.yml'),JSON.stringify(overlay,null,2)+'\n')
 const profileDsh=join(profileRoot,'node_modules','@deepseek-ai','dsh','lib','bin.js'),child=spawn(process.execPath,[profileDsh,'--profile',profile,'--host','127.0.0.1','--port','0','--no-open'],{cwd:area,env,windowsHide:true,stdio:['pipe','pipe','pipe']})
@@ -135,6 +140,7 @@ try{
  const retainedUrl=await form.getByRole('link',{name:/^下载原件$|^Download original$/}).first().getAttribute('href'),retainedResponse=await context.request.get(origin+retainedUrl);assert.equal(retainedResponse.status(),200);assert.deepEqual(await retainedResponse.body(),png);assert.equal(captures.length,4);checks.push('disabling-new-media-keeps-retained-original-downloads')
  await form.getByRole('switch',{name:/^启用媒体原件$|^Enable original media$/}).click();await form.getByRole('button',{name:/^保存$|^Save$/}).click();await until(async()=>await form.getByRole('button',{name:/^刷新$|^Refresh$/}).isEnabled());await form.getByText(/^已应用保存的配置$|^Saved settings active$/).waitFor()
  await page.reload({waitUntil:'domcontentloaded'});await open();await reports.selectOption(mediaId);await until(async()=>await form.locator('.imlab-original').count()===4);assert.equal(captures.length,4);checks.push('original-media-report-survives-reload-without-another-model-call')
+ const background=scenario('LAB_BACKGROUND_TEXT');background.stages[0].inputs[0].directed=false;background.actors.push('bob');background.stages.push({inputs:[{id:'follow',actor:'bob',conversation:'lounge',text:'LAB_BACKGROUND_FOLLOW',directed:false,replyToOutput:{stage:0,index:0}}]});await source.fill(JSON.stringify(background));await form.getByRole('button',{name:/开始新用例|Start new case/}).click();await form.getByText('LAB_BACKGROUND_QUOTED',{exact:true}).waitFor();assert.equal(captures.length,4);const backgroundId=await reports.inputValue();const events=(await readFile(join(attempt,'lab-data',backgroundId+'.jsonl'),'utf8')).trim().split('\n').map(JSON.parse);assert.equal(events[0].schema,2);assert.ok(events[0].backgroundProviders.includes('job-delivery'));assert.equal(events.filter(event=>event.type==='background').length,2);assert.ok(events.filter(event=>event.type==='background').every(event=>event.tasks.length===1&&event.tasks[0].outputs.accepted===1));checks.push('native-web-case-waits-real-background-jobs-and-quotes-their-captured-output');await page.screenshot({path:join(attempt,'background-output.png')})
  await reports.selectOption(secondId);await form.getByText('LAB_REPLY_4',{exact:true}).waitFor();await page.setViewportSize({width:1280,height:1700});await form.evaluate(element=>element.scrollIntoView({block:'start'}));await page.screenshot({path:join(attempt,'light.png'),fullPage:true});await page.emulateMedia({colorScheme:'dark'});await page.screenshot({path:join(attempt,'dark.png'),fullPage:true})
  await page.getByRole('button',{name:/^收起侧边栏$|^Collapse sidebar$/}).click();await page.setViewportSize({width:520,height:1700});await form.evaluate(element=>element.scrollIntoView({block:'start'}));assert.ok(await form.evaluate(element=>element.scrollWidth<=element.clientWidth+2));assert.ok(await form.evaluate(element=>[...element.querySelectorAll('input,select,textarea')].filter(item=>item.getClientRects().length).every(item=>{const rect=item.getBoundingClientRect();return rect.left>=0&&rect.right<=innerWidth})));await page.screenshot({path:join(attempt,'narrow.png'),fullPage:true});checks.push('native-light-dark-and-narrow-layout')
  await form.getByRole('button',{name:/^重启运行时$|^Restart runtime$/}).click();await page.getByText(/^实验室运行时已重启$|^Lab runtime restarted$/).waitFor();await until(async()=>await reports.locator('option').filter({hasText:firstId}).count()>0);await reports.selectOption(firstId);await form.getByText('LAB_REPLY_2',{exact:true}).waitFor();assert.equal(captures.length,4)

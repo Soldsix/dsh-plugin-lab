@@ -1,6 +1,9 @@
 - insert:
     - id: plugin-lab-control
       name: dsh-plugin-lab/control
+    - id: plugin-lab-job-delivery
+      name: dsh-plugin-lab/job-delivery
+      disabled: true
     - id: plugin-lab-runtime
       name: dsh-plugin-lab
       config:

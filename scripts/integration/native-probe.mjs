@@ -2,13 +2,13 @@
 import assert from 'node:assert/strict'
 import {writeFile} from 'node:fs/promises'
 import {setTimeout as delay} from 'node:timers/promises'
-export const inject=['imMedia','im','imLab','qqChat','imLabControl','configEditor','typertGateway','remoteAccess','connection']
+export const inject=['imMedia','im','imLab','jobDelivery','labBackgroundFixture','qqChat','imLabControl','configEditor','typertGateway','remoteAccess','connection']
 const source=(text,directed=true)=>({title:'Synthetic native Lab case',actors:['alice'],conversations:[{id:'lounge',kind:'group'}],stages:[{inputs:[{id:'first',actor:'alice',conversation:'lounge',text,directed}]}]})
 export function apply(ctx,config){const work=probe(ctx,config);ctx.effect(()=>async()=>{await work})}
 async function probe(ctx,config){
  const checks=[]
  try{
-  const ready=Date.now()+10000;while(!ctx.qqChat.status().transportAttached){assert.ok(Date.now()<ready,'Chat did not attach to the local lab');await delay(20)}
+  const ready=Date.now()+10000;while(!ctx.qqChat.status().transportAttached||!ctx.imLab.status().backgroundProviders.includes('job-delivery')){assert.ok(Date.now()<ready,'Native consumers did not attach to the local lab');await delay(20)}
   const firstId='native-lab-context-0001',scenario=source('LAB_FIRST')
   scenario.stages.push({inputs:[{id:'followup',actor:'alice',conversation:'lounge',text:'LAB_FOLLOW',directed:false}]})
   const first=await ctx.imLab.run({runId:firstId,scenario},new AbortController().signal)
@@ -81,6 +81,22 @@ async function probe(ctx,config){
   }
   assert.equal((await ctx.imLab.run({runId:mediaId,scenario:mediaCase},new AbortController().signal)).replayed,true);assert.equal(ctx.imMedia.status().providers,0);assert.equal(ctx.imMedia.status().pending,0)
   checks.push('native-media-inputs-and-generated-output-retain-verbatim-bytes-with-owner-only-downloads-and-no-model-call-or-replay')
+  const backgroundId='native-background-quote-0001',backgroundCase=source('LAB_BACKGROUND_TEXT',false);backgroundCase.actors.push('bob');backgroundCase.stages.push({inputs:[{id:'follow',actor:'bob',conversation:'lounge',text:'LAB_BACKGROUND_FOLLOW',directed:false,replyToOutput:{stage:0,index:0}}]})
+  const background=await ctx.imLab.run({runId:backgroundId,scenario:backgroundCase},new AbortController().signal);assert.equal(background.phase,'completed');assert.equal(background.captureCount,2)
+  const backgroundReport=await ctx.imLab.inspect(backgroundId);assert.equal(backgroundReport.created.schema,2);assert.deepEqual(backgroundReport.created.backgroundProviders,['job-delivery']);assert.equal(backgroundReport.events.filter(event=>event.type==='background').length,2);assert.equal(backgroundReport.events.filter(event=>event.type==='capture')[1].capture.parts[0].text,'LAB_BACKGROUND_QUOTED')
+  assert.equal((await ctx.imLab.run({runId:backgroundId,scenario:backgroundCase},new AbortController().signal)).replayed,true)
+  checks.push('installed-background-job-adapter-retains-queued-text-before-cross-participant-output-quote-without-replay')
+  const queuedMedia={...mediaCase,title:'Queued original media',stages:[{inputs:[{...mediaCase.stages[0].inputs[0],text:'LAB_BACKGROUND_MEDIA'}]}]},queuedId='native-background-media-0001'
+  const mediaQueued=await ctx.imLab.run({runId:queuedId,scenario:queuedMedia},new AbortController().signal);assert.equal(mediaQueued.phase,'completed');assert.equal(mediaQueued.captureCount,1);assert.equal(mediaQueued.unresolvedMedia,0)
+  const queuedView=await invoke('inspect',{request:{runId:queuedId}});assert.equal(queuedView.originals.length,2)
+  for(const [index,original]of queuedView.originals.entries()){const response=await handler.fetch(new Request('http://localhost/api/im-lab-media?runId='+queuedId+'&attachmentId='+original.attachmentId),peer);assert.equal(response.status,200);assert.deepEqual(Buffer.from(await response.arrayBuffer()),index===0?png:wav)}
+  checks.push('installed-background-producer-checkpoints-capture-and-owner-download-keep-exact-png-and-wav-originals')
+  try{
+   const heldId='native-background-cancel-0001';await ctx.imLab.start({runId:heldId,scenario:source('LAB_BACKGROUND_HOLD',false)},new AbortController().signal);await ctx.labBackgroundFixture.entered
+   let joined=false;const held=ctx.imLab.wait(heldId).then(result=>{joined=true;return result});ctx.imLab.cancel(heldId)
+   const sibling=await ctx.imLab.run({runId:'native-background-sibling-0001',scenario:source('LAB_BACKGROUND_TEXT',false)},new AbortController().signal);assert.equal(sibling.phase,'completed');assert.equal(joined,false);ctx.labBackgroundFixture.finish();assert.equal((await held).phase,'cancelled');assert.equal(ctx.jobDelivery.status().running,0);assert.equal(ctx.jobDelivery.status().sending,0)
+  }finally{ctx.labBackgroundFixture.finish()}
+  checks.push('native-cancel-joins-actual-background-producer-cleanup-while-sibling-case-finishes')
   const exported=await ctx.imLab.export(firstId,new AbortController().signal),report=await new Response(exported.body).text();await exported.done
   assert.ok(report.includes('LAB_REPLY_1')&&report.includes('LAB_REPLY_2'))
   checks.push('native-full-report-export-retains-all-structured-captures')
