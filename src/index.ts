@@ -2,6 +2,9 @@
 import type {Context} from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-app-boot'
 import type {} from 'dsh-im-kit/cordis'
+import type {} from '@deepseek-ai/dsh-attachment'
+import type {} from 'dsh-media-kit/im-cordis'
+import {ImMediaRuntime,resolveImMedia} from 'dsh-media-kit/im'
 import {ImRuntime} from 'dsh-im-kit'
 import {Config,resolveConfig} from './config.ts'
 import {LabEngine} from './engine.ts'
@@ -11,7 +14,7 @@ export type {ReportStream} from './report-stream.ts'
 /** Native plugin identity. */
 export const name='plugin-lab'
 /** A profile supplies the neutral storage location; model consumers are optional and independent. */
-export const inject=['profileContext']
+export const inject=['profileContext','attachments']
 declare module '@deepseek-ai/cordis'{interface Context{readonly imLab:LabEngine}}
 
 /**
@@ -24,6 +27,9 @@ export async function apply(ctx:Context,config:Config):Promise<void>{
  const spec=resolveConfig(config,ctx.profileContext.dir);if(!spec)return
  if(ctx.get('im'))throw new Error('Local lab requires a dedicated profile without another IM provider')
  const im=new ImRuntime();ctx.effect(()=>()=>im.close())
- const engine=await LabEngine.open(spec,im);ctx.effect(()=>()=>engine.close())
+ const media=spec.mediaEnabled?new ImMediaRuntime(resolveImMedia({maxProviders:spec.maxConcurrentRuns,maxPendingPerProvider:spec.maxMediaOperations})):undefined
+ if(media)ctx.effect(()=>()=>media.close())
+ const engine=await LabEngine.open(spec,im,{attachments:ctx.attachments,...media?{runtime:media}:{}});ctx.effect(()=>()=>engine.close())
+ if(media)ctx.effect(()=>ctx.provide('imMedia',media))
  ctx.effect(()=>ctx.provide('im',im));ctx.effect(()=>ctx.provide('imLab',engine))
 }

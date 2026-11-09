@@ -8,13 +8,14 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Exercise staged conversations with synthetic identities, retain complete source cases before computation, and capture structured outbound messages locally. Concurrent stages, durable admission, cancellation and repeated-submit protection use installed DSH consumers. A native owner page configures the runtime, tracks background cases and downloads original reports. Controlled integration, fresh-browser scenarios and basic real API text tests have passed. This remains a development package: complete media, external-write capture and cross-platform release verification are pending.
+Exercise staged conversations with synthetic identities, retain complete source cases before computation, and capture structured outbound messages locally. Native owner controls manage background cases and original downloads. Optional media preserves exact images, audio, video and files through scoped native attachments, with browser uploads and previews. Installed consumers supply models and tools. This remains a development package: merged forwards, background-job draining, external-write capture and cross-platform release verification are pending.
 
 ## Table of Contents
 
 - [Current use and scope](#current-use-and-scope)
 - [Native owner page](#native-owner-page)
 - [Scenario example](#scenario-example)
+- [Original media](#original-media)
 - [Storage and cancellation](#storage-and-cancellation)
 - [Model Experience](#model-experience)
 - [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
@@ -22,9 +23,17 @@ Exercise staged conversations with synthetic identities, retain complete source 
 <a id="current-use-and-scope"></a>
 ## Current use and scope
 
-The development bundle requires DSH 0.2.2-rc.1, Node ^22.19 or >=24 and the independent dsh-im-kit 0.2.1 library. It is disabled by default. Enabled runtime requires a dedicated profile without another IM provider; it refuses to replace an existing one. Each run maps synthetic aliases to independent accounts, actors and peers. An installed consumer such as dsh-qq-chat supplies actual chat behavior; this package implements neither a model client nor a live QQ sender.
+The development bundle targets DSH 0.2.2-rc.1 and Node ^22.19 or >=24. It uses independent dsh-im-kit 0.2.1 and dsh-media-kit 0.2.0 libraries plus the Host attachment capability. It is disabled by default and requires a dedicated profile without another IM provider. Each run binds synthetic actors, peers and a separate account. An installed consumer such as dsh-qq-chat supplies actual chat behavior; the lab implements no model client or live QQ sender.
 
 Isolated SDK and Web profiles install the tarballs through the normal DSH plugin manager; no production profile is imported. After installing peer dependencies, `npm run check` builds and tests the source. `npm pack --pack-destination artifacts` creates the package used by the integration scripts. The Host service offers `run`, background `start`, `wait`, `cancel`, `inspect`, `list`, `export` and metadata-only `status`. A missing consumer is an explicit failure.
+
+Install the development release in a dedicated profile, then install the consumers you want to test in that same profile. The default Web template supplies native attachments; other templates must provide that service explicitly. The lab does not install a chat, vision, search or generation consumer for you.
+
+```sh
+dsh --profile qq-lab --from-default-profile web --dump-config
+dsh plugin --profile qq-lab add https://github.com/Soldsix/dsh-plugin-lab/releases/download/v0.1.0-development/dsh-plugin-lab-0.1.0-development.tgz
+dsh --profile qq-lab --no-open
+```
 
 <a id="native-owner-page"></a>
 ## Native owner page
@@ -33,7 +42,7 @@ The bundle adds a controller and a disabled runtime row. In DSH Web, open Plugin
 
 Paste a scenario into Scenario JSON and start a new case. Admission returns after the complete source is flushed, then execution continues when the page closes or reloads. Stored reports can be selected, inspected and explicitly cancelled. The page shows bounded text previews and marks omitted captures or text. Download full original report streams the exact retained JSONL through the native owner-authenticated connection; it accepts only a run ID, never a filesystem path. Runtime disposal aborts and joins its cases, and controller disposal joins its owned runs and downloads.
 
-Run `npm run test:native -- --im-kit-archive <library.tgz> --chat-archive <chat.tgz>` for installed SDK integration, or `npm run test:web -- --im-kit-archive <library.tgz> --chat-archive <chat.tgz> --browser-cache <playwright-browsers>` for a fresh headless Web profile. Real API checks use `npm run test:real-api -- --im-kit-archive <library.tgz> --chat-archive <chat.tgz> --credential-store <managed-credentials.yaml>` with the configured official DeepSeek credential read-only. These tests send no QQ messages and perform no Bilibili writes; third-party code installed by an operator is not sandboxed by the lab.
+Run `npm run test:native -- --im-kit-archive <library.tgz> --chat-archive <chat.tgz> --media-archive <media.tgz>` for installed SDK integration, or `npm run test:web -- --im-kit-archive <library.tgz> --chat-archive <chat.tgz> --media-archive <media.tgz> --browser-cache <playwright-browsers>` for a fresh headless Web profile. Real API checks use `npm run test:real-api -- --im-kit-archive <library.tgz> --chat-archive <chat.tgz> --credential-store <managed-credentials.yaml>` with the configured official DeepSeek credential read-only. These tests send no QQ messages and perform no Bilibili writes; third-party code installed by an operator is not sandboxed by the lab.
 
 A DSH Host profile must provide its declared non-optional peer dependencies. Isolated SDK/Web verification uses a pinned pnpm and completes test-profile dependencies from installed DSH package declarations; it neither borrows ancestor dependencies nor changes production profiles.
 
@@ -56,7 +65,61 @@ The source representation separates actor aliases, conversation aliases and stag
 
 The normal consumer decides whether to answer. A `completed` result means the admitted stages settled; it is not a semantic-quality verdict, proof of a successful model turn, or QQ delivery verification. Captures preserve structured text, mentions, reply IDs and opaque media references. `unresolvedMedia` counts references that still lack final byte materialization.
 
-An input can quote an earlier input with `replyTo`, or an earlier captured bot output with `replyToOutput: {"stage": 0, "index": 0}`; never both. Stage and output indexes start at zero. The output index selects only the same conversation in durable capture order during that stage, not a particular input or another conversation. Concurrent/future selectors fail before execution; if the selected earlier output does not exist, the run retains its source and fails before publishing the dependent input. One `{format, content}` card can retain original JSON/XML and share the text capacity with the body. An empty text body requires a card; the installed consumer owns parsing, search and page access.
+An input can quote an earlier input with `replyTo`, or an earlier captured bot output with `replyToOutput: {"stage": 0, "index": 0}`; never both. Stage and output indexes start at zero. The output index selects only the same conversation in durable capture order during that stage, not a particular input or another conversation. Concurrent/future selectors fail before execution; if the selected earlier output does not exist, the run retains its source and fails before publishing the dependent input. One `{format, content}` card can retain original JSON/XML and share the text capacity with the body. An empty text body requires a card or media; the installed consumer owns parsing, search and page access.
+
+<a id="original-media"></a>
+## Original media
+
+Enable `mediaEnabled` in the advanced owner settings and save before submitting new media. Turning it off does not remove retained originals or their owner downloads; current read limits still apply. Choose an input in Attach to input, then select files in Add original files. The page appends complete Base64 assets and references to that input, preserving other messages and original text. A changed draft wins over an unfinished file read; the upload is rejected without overwriting it. You can also submit this complete image case:
+
+```json
+{
+  "title": "Local original image",
+  "actors": [
+    "alice"
+  ],
+  "conversations": [
+    {
+      "id": "lounge",
+      "kind": "group"
+    }
+  ],
+  "assets": [
+    {
+      "id": "pixel",
+      "fileName": "pixel.png",
+      "base64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a/1UAAAAASUVORK5CYII="
+    }
+  ],
+  "stages": [
+    {
+      "inputs": [
+        {
+          "id": "picture",
+          "actor": "alice",
+          "conversation": "lounge",
+          "text": "Read this image",
+          "directed": true,
+          "media": [
+            {
+              "type": "image",
+              "asset": "pixel"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
+```
+
+An asset has `id`, `fileName`, complete canonical `base64`, optional `textMime` for plain text/HTML/JSON, or explicit `unclassified: true` for opaque archival. It accepts neither a host path nor a source URL. Inputs refer to `{type, asset}` entries in `media`; image-only bodies may be empty. Scope-bound handles are created after retaining the source and durable native grant. Repeated assets within one conversation reuse the import; other conversations and cases receive independent handles. Unknown codecs can be preserved as file or explicitly unclassified audio without a playback claim.
+
+`maxMediaItemBytes`, `maxMediaBytes`, `maxMediaReferences`, `maxMediaOperations`, `maxMediaDimension`, `maxMediaPixels`, `mediaChunkBytes` and `allowedMediaMimeTypes` are editable capacities. Source-byte sums and unique stored originals each obey the total byte limit. Base64 occupies more space than the original: record/report limits also apply to the complete retained source, independently of media limits. Capacity failures preserve the caller draft and never truncate media.
+
+The owner page lists bounded retained originals with size, MIME, dimensions and hash. Image previews use original encoded bytes; audio/video controls request the same bytes. Download original performs complete integrity verification before returning bytes; HTML and other files use attachment responses. Media reads and active writers block conflicting configuration changes. Reports retain native grants for later downloads without rerunning a case. Opaque forwards remain unresolved; `unresolvedMedia` excludes only output parts whose exact original was actually materialized and recorded.
+
+The lab does not recognize images, transcribe speech, synthesize voice or generate pictures itself. Install a consumer that reads `ctx.imMedia` and returns output through the normal IM service. Its configured model and tool calls still execute; only declared local message/media outputs are captured. The profile owner controls original downloads through the same authenticated native connection as report downloads.
 
 <a id="storage-and-cancellation"></a>
 ## Storage and cancellation
@@ -73,7 +136,7 @@ This package registers no model tool and does not add a prompt or request its ow
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- Current tests cover actual files, controlled consumers, 15 synthetic actors, native owner permissions, durable background runs, original-report downloads and light/dark/narrow Web layouts. They do not prove natural multi-person dialogue or complete application behavior.
-- Basic real DeepSeek text turns verify context recall, arithmetic and retained public replies through the installed lab. They are not comparative intelligence or performance benchmarks. Linux, Desktop and full media scenarios remain unverified; this development source is not a sealed release candidate.
-- Input media, exact materialized output bytes, final QQ encoding, background-job draining and captured external writes require additional adapters. Their presence is not inferred from an opaque attachment ID.
-- Reports retain original text locally without encryption. All control operations and streaming downloads require the profile owner, including when a non-owner has global Remote permissions. Protect the local profile directory; core Host hot-replacement limits documented by the Chat package also apply to this integration.
+- Local tests cover original media, three concurrent 15-actor cases, owner permissions, cancellation, durable background cases, original downloads and browser upload/preview/decode. They do not prove natural dialogue, OCR identity accuracy, synthesis quality or complete application behavior.
+- Earlier real DeepSeek text smokes cover context recall, arithmetic and retained public replies. This media checkpoint uses controlled local model fixtures and real native attachment APIs, not new upstream model calls. Linux and Desktop release verification remain pending.
+- Merged forwards, final QQ encoding, background-job draining and captured platform writes need additional adapters. Arbitrary trusted Host code is not sandboxed, and this package does not silently block or capture its direct external writes.
+- Owner reports retain full source text, source bytes and native receipts locally without encryption. Control operations and downloads reject non-owners even with global Remote permissions. Core Host hot-replacement limits documented by Chat also apply.

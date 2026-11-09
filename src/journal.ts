@@ -8,9 +8,11 @@ import {z} from 'zod'
 import type {Spec} from './config.ts'
 import type {RunId,Scenario,JournalEvent,StoredRun,RunResult,Capture,RunPage} from './types.ts'
 import type {ReportStream} from './report-stream.ts'
+import {mediaScope} from 'dsh-media-kit/scoped-native'
+import {scopeKey} from 'dsh-im-kit'
 import {eventSchema,runIdSchema} from './schema.ts'
 import {LabError} from './errors.ts'
-import {scenarioFingerprint} from './identity.ts'
+import {scenarioFingerprint,labScope} from './identity.ts'
 
 const marker=z.object({application:z.literal('dsh-plugin-lab'),schema:z.literal(1),namespace:z.string()}).strict()
 const isCode=(error:unknown,code:string)=>typeof error==='object'&&error!==null&&'code'in error&&error.code===code
@@ -20,7 +22,7 @@ const isCode=(error:unknown,code:string)=>typeof error==='object'&&error!==null&
  * @param capture - structured local output, unchanged from the messaging consumer.
  * @returns media references requiring a separate byte-resolution adapter.
  */
-export function unresolvedMedia(capture:Capture):number{return capture.parts.filter(part=>['image','audio','video','file','forward'].includes(part.type)).length}
+export function unresolvedMedia(capture:Capture):number{return capture.parts.filter((part,index)=>['image','audio','video','file','forward'].includes(part.type)&&!capture.originals?.some(value=>value.partIndex===index&&'attachmentId'in part&&value.attachmentId===part.attachmentId)).length}
 
 /**
  * Derive lifecycle counts without treating a captured reply as a quality verdict.
@@ -125,15 +127,25 @@ export class RunJournal{
    if(incompleteTail&&events.at(-1)?.type==='ended')throw new LabError('journal-invalid')
    const created=events[0]
    if(!created||created.type!=='created'||created.runId!==runId||created.fingerprint!==scenarioFingerprint(created.scenario))throw new LabError('journal-invalid')
-   const validInputs=new Set(created.scenario.stages.flatMap(stage=>stage.inputs.map(input=>input.id))),inputs=new Set<string>(),dispatches=new Set<string>(),operations=new Set<string>()
+   const validInputs=new Set(created.scenario.stages.flatMap(stage=>stage.inputs.map(input=>input.id))),inputs=new Set<string>(),dispatches=new Set<string>(),operations=new Set<string>(),grants=new Map<string,Extract<JournalEvent,{type:'media-grant'}>['grant']>()
    for(let index=1;index<events.length;index++){
     const event=events[index]!
     if(event.type==='created')throw new LabError('journal-invalid')
     if(event.type==='input'){if(!validInputs.has(event.inputId)||inputs.has(event.inputId))throw new LabError('journal-invalid');inputs.add(event.inputId)}
     if(event.type==='dispatch'){if(!inputs.has(event.inputId)||dispatches.has(event.inputId))throw new LabError('journal-invalid');dispatches.add(event.inputId)}
+    if(event.type==='media-grant'){
+     if(grants.has(event.grant.reference)||!created.scenario.conversations.some(conversation=>mediaScope(scopeKey(labScope(config.namespace,runId,conversation)))===event.grant.scope))throw new LabError('journal-invalid')
+     grants.set(event.grant.reference,event.grant)
+    }
     if(event.type==='capture'){
      const conversation=created.scenario.conversations.find(value=>value.id===event.capture.conversation)
      if(!conversation||conversation.kind!==event.capture.kind||operations.has(event.capture.operationId))throw new LabError('journal-invalid')
+     const indexes=new Set<number>()
+     for(const original of event.capture.originals??[]){
+      const part=event.capture.parts[original.partIndex],grant=grants.get(original.attachmentId),descriptor=grant?.stored.descriptor
+      if(indexes.has(original.partIndex)||!part||!('attachmentId'in part)||part.attachmentId!==original.attachmentId||!grant||grant.scope!==mediaScope(scopeKey(labScope(config.namespace,runId,conversation)))||descriptor?.sha256!==original.sha256||descriptor.fileName!==original.fileName||descriptor.mime!==original.mime||descriptor.byteLength!==original.bytes||descriptor.image?.width!==original.width||descriptor.image?.height!==original.height)throw new LabError('journal-invalid')
+      indexes.add(original.partIndex)
+     }
      operations.add(event.capture.operationId)
     }
     if(event.type==='ended'){

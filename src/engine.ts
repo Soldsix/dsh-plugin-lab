@@ -1,14 +1,19 @@
 /** Stage scheduling uses installed IM consumers and keeps each synthetic run's scope independent. */
-import {ImRuntime,identifier,type AccountRef,type InboundMessage} from 'dsh-im-kit'
+import {ImRuntime,identifier,type AccountRef,type InboundMessage,type MessagePart} from 'dsh-im-kit'
+import type {OriginalMedia} from 'dsh-media-kit'
+import {mediaReference} from 'dsh-media-kit/scoped-native'
+import {readNativeOriginal} from 'dsh-media-kit/dsh-attachments'
 import {z} from 'zod'
+import {mediaStorage} from './config.ts'
+import {RunMedia,type LabMediaServices} from './media.ts'
 import type {Spec} from './config.ts'
 import type {RunId,Scenario,ScenarioInput,RunResult,FailureCode,StoredRun,RunAdmission,EngineStatus,RunPage,Capture} from './types.ts'
 import type {ReportStream} from './report-stream.ts'
 import {runIdSchema,parseScenario} from './schema.ts'
-import {LabError,failureCode} from './errors.ts'
+import {LabError,failureCode,mediaFailure} from './errors.ts'
 import {RunJournal,summarize} from './journal.ts'
 import {CaptureTransport} from './capture.ts'
-import {scenarioFingerprint} from './identity.ts'
+import {scenarioFingerprint,labAccount,labScope} from './identity.ts'
 
 const request=z.object({runId:runIdSchema,scenario:z.unknown()}).strict()
 interface Active{readonly digest:string;readonly controller:AbortController;readonly done:Promise<RunResult>;readonly admission:Promise<RunAdmission>}
@@ -18,16 +23,18 @@ export class LabEngine{
  private readonly lifetime=new AbortController()
  private readonly active=new Map<RunId,Active>()
  private readonly journals=new Map<RunId,RunJournal>()
+ private readonly mediaReads=new Set<Promise<OriginalMedia>>()
  private lastFailure:EngineStatus['lastFailure']=null
  private stopping:Promise<void>|undefined
- private constructor(private readonly config:Spec,private readonly im:ImRuntime){}
+ private constructor(private readonly config:Spec,private readonly im:ImRuntime,private readonly media:LabMediaServices|undefined){}
  /**
   * Initialize a marked report store before admitting any run.
   * @param config - resolved limits and local evidence directory.
   * @param im - caller-owned IM runtime; only run-prefixed accounts are registered.
+  * @param media - native attachments for retained downloads and routing when new media capture is enabled.
   * @returns ready engine without registering a model or messaging consumer.
   */
- static async open(config:Spec,im:ImRuntime):Promise<LabEngine>{await RunJournal.initialize(config);return new LabEngine(config,im)}
+ static async open(config:Spec,im:ImRuntime,media?:LabMediaServices):Promise<LabEngine>{if(config.mediaEnabled&&!media?.runtime)throw new LabError('media-unavailable');await RunJournal.initialize(config);return new LabEngine(config,im,media)}
  /** Actual parsed operator revision, before profile-local storage resolution. */
  get configRevision():string{return this.config.operatorRevision}
  /** @returns active identities, shutdown state and safe failure metadata without source bodies. */
@@ -52,6 +59,7 @@ export class LabEngine{
   if(this.lifetime.signal.aborted)throw new LabError('closed')
   let runId:RunId,scenario:Scenario
   try{const parsed=request.parse(value);runId=parsed.runId;scenario=parseScenario(parsed.scenario,this.config)}catch(error){throw new LabError('invalid-scenario')}
+  if(!this.config.mediaEnabled&&(scenario.assets?.length||scenario.stages.some(stage=>stage.inputs.some(input=>input.media?.length))))throw new LabError('media-unavailable')
   const digest=scenarioFingerprint(scenario),existing=this.active.get(runId)
   if(existing){if(existing.digest!==digest)throw new LabError('source-conflict');return{entry:{...existing,done:existing.done.then(result=>({...result,replayed:true}))},shared:true}}
   if(this.active.size>=this.config.maxConcurrentRuns)throw new LabError('capacity')
@@ -103,30 +111,33 @@ export class LabEngine{
   * @returns original bounded report snapshot; active local writers are refused.
   */
  export(id:unknown,signal:AbortSignal):Promise<ReportStream>{const parsed=runIdSchema.safeParse(id);if(!parsed.success)throw new LabError('invalid-scenario');if(this.active.has(parsed.data))throw new LabError('capacity');return RunJournal.export(this.config,parsed.data,signal)}
- private message(runId:RunId,scenario:Scenario,input:ScenarioInput,account:AccountRef,quotedOutput:string|undefined):InboundMessage{
+ private message(runId:RunId,scenario:Scenario,input:ScenarioInput,account:AccountRef,quotedOutput:string|undefined,mediaParts:readonly MessagePart[]):InboundMessage{
   const conversation=scenario.conversations.find(value=>value.id===input.conversation)!
   const user=(alias:string)=>identifier('im.user','lab-actor/'+runId+'/'+alias)
   const now=Date.now()
   return{scope:{account,kind:conversation.kind,peerId:identifier('im.peer','lab-peer/'+runId+'/'+conversation.id)},messageId:identifier('im.message','lab-in/'+runId+'/'+input.id),senderId:user(input.actor),sentAt:now,receivedAt:now,directedToBot:input.directed,
-   parts:[...quotedOutput?[{type:'reply' as const,messageId:identifier('im.message',quotedOutput)}]:[],...input.replyTo?[{type:'reply' as const,messageId:identifier('im.message','lab-in/'+runId+'/'+input.replyTo)}]:[],...input.directed?[{type:'mention' as const,userId:identifier('im.user',account.accountId)}]:[],...input.mentionActor?[{type:'mention' as const,userId:user(input.mentionActor)}]:[],{type:'text',text:input.text},...input.card?[{type:'card' as const,format:input.card.format,content:input.card.content}]:[]]}
+   parts:[...quotedOutput?[{type:'reply' as const,messageId:identifier('im.message',quotedOutput)}]:[],...input.replyTo?[{type:'reply' as const,messageId:identifier('im.message','lab-in/'+runId+'/'+input.replyTo)}]:[],...input.directed?[{type:'mention' as const,userId:identifier('im.user',account.accountId)}]:[],...input.mentionActor?[{type:'mention' as const,userId:user(input.mentionActor)}]:[],{type:'text',text:input.text},...mediaParts,...input.card?[{type:'card' as const,format:input.card.format,content:input.card.content}]:[]]}
  }
  private async execute(runId:RunId,scenario:Scenario,signal:AbortSignal,admitted:(value:RunAdmission)=>void):Promise<RunResult>{
   const claim=await RunJournal.claim(this.config,runId,scenario)
   if(!claim.created){admitted({runId,replayed:true});return{...claim.stored.result,replayed:true}}
   admitted({runId,replayed:false});this.journals.set(runId,claim.journal)
-  const journal=claim.journal,account:AccountRef={tenantId:identifier('im.tenant',this.config.namespace),networkId:identifier('im.network','im-lab'),accountId:identifier('im.account','lab-run/'+runId)}
-  const provider=new CaptureTransport(account,runId,scenario,journal),outputStages:(readonly Pick<Capture,'messageId'|'conversation'>[])[]=[]
+  const journal=claim.journal,account=labAccount(this.config.namespace,runId)
+  const routing=this.media?.runtime,runMedia=this.config.mediaEnabled&&this.media&&routing?new RunMedia(this.config,{attachments:this.media.attachments,runtime:routing},account,scenario,journal):undefined
+  const provider=new CaptureTransport(account,runId,scenario,journal,runMedia?this.media?.runtime:undefined),outputStages:(readonly Pick<Capture,'messageId'|'conversation'>[])[]=[]
   let outputCount=0
-  let release:(()=>Promise<void>)|undefined,failure:FailureCode|null=null
+  let release:(()=>Promise<void>)|undefined,releaseMedia:(()=>Promise<void>)|undefined,failure:FailureCode|null=null
   try{
-   signal.throwIfAborted();release=this.im.register(provider)
+   signal.throwIfAborted();if(runMedia&&routing)releaseMedia=routing.register(runMedia.provider);release=this.im.register(provider)
    for(const stage of scenario.stages){
     signal.throwIfAborted()
     const settled=await Promise.allSettled(stage.inputs.map(async input=>{
      signal.throwIfAborted();await journal.append({type:'input',inputId:input.id,time:Date.now()});signal.throwIfAborted()
      const quote=input.replyToOutput,quotedOutput=quote?outputStages[quote.stage]?.filter(value=>value.conversation===input.conversation)[quote.index]?.messageId:undefined
      if(quote&&!quotedOutput)throw new LabError('invalid-scenario')
-     const report=await this.im.publish(this.message(runId,scenario,input,account,quotedOutput),signal)
+     const destination=labScope(this.config.namespace,runId,scenario.conversations.find(value=>value.id===input.conversation)!)
+     const mediaParts=runMedia?await runMedia.parts(destination,input,signal):[]
+     const report=await this.im.publish(this.message(runId,scenario,input,account,quotedOutput,mediaParts),signal)
      await journal.append({type:'dispatch',inputId:input.id,report,time:Date.now()})
     }))
     const captured=provider.messages();outputStages.push(captured.slice(outputCount));outputCount=captured.length
@@ -134,7 +145,7 @@ export class LabEngine{
     if(failure)break
    }
   }catch(error){failure=signal.aborted?'cancelled':failureCode(error)}
-  finally{try{if(release)await release()}catch(error){failure??=failureCode(error)}}
+  finally{try{if(release)await release()}catch(error){failure??=failureCode(error)}try{if(releaseMedia)await releaseMedia();else if(runMedia)await runMedia.provider.dispose()}catch(error){failure??=mediaFailure(error).code}}
   try{
    const counts=summarize(runId,journal.snapshot())
    failure??=provider.failure()??(counts.consumerFailures?'consumer-failed':counts.unhandledInputs?'no-consumer':null)
@@ -144,6 +155,21 @@ export class LabEngine{
   }catch(error){throw error instanceof LabError?error:new LabError('journal-unavailable')}
   finally{try{await journal.close()}finally{this.journals.delete(runId)}}
  }
+ /** @param id - retained case identity. @param reference - opaque media handle from that case. @param signal - authenticated owner download lifetime. @returns verified original bytes without replaying a case or accepting a filesystem path. */
+ readMedia(id:unknown,reference:unknown,signal:AbortSignal):Promise<OriginalMedia>{
+  if(this.lifetime.signal.aborted)return Promise.reject(new LabError('closed'))
+  if(!this.media)return Promise.reject(new LabError('media-unavailable'))
+  if(this.mediaReads.size>=this.config.maxMediaOperations)return Promise.reject(new LabError('capacity'))
+  const parsed=runIdSchema.safeParse(id);if(!parsed.success||typeof reference!=='string')return Promise.reject(new LabError('invalid-scenario'))
+  let attachment:ReturnType<typeof mediaReference>;try{attachment=mediaReference(reference)}catch(error){return Promise.reject(new LabError('invalid-scenario'))}
+  if(this.active.has(parsed.data))return Promise.reject(new LabError('capacity'))
+  const services=this.media,combined=AbortSignal.any([signal,this.lifetime.signal]),operation=(async()=>{
+   if(combined.aborted)throw new LabError('cancelled')
+   const stored=await this.inspect(parsed.data),grant=stored.events.find(value=>value.type==='media-grant'&&value.grant.reference===attachment)
+   if(!grant||grant.type!=='media-grant')throw new LabError('media-invalid')
+   try{return await readNativeOriginal(services.attachments,grant.grant.stored,mediaStorage(this.config),combined)}catch(error){throw mediaFailure(error)}
+  })();this.mediaReads.add(operation);void operation.then(()=>{this.mediaReads.delete(operation)},()=>{this.mediaReads.delete(operation)});return operation
+ }
  /** @returns completion after aborting and joining every active run; the caller still owns IM shutdown. */
- close():Promise<void>{if(this.stopping)return this.stopping;this.lifetime.abort();return this.stopping=(async()=>{await Promise.allSettled([...this.active.values()].map(value=>value.done))})()}
+ close():Promise<void>{if(this.stopping)return this.stopping;this.lifetime.abort();return this.stopping=(async()=>{await Promise.allSettled([...this.active.values()].map(value=>value.done));await Promise.allSettled([...this.mediaReads])})()}
 }

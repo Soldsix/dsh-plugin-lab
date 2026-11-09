@@ -1,12 +1,13 @@
 /** Native owner page keeps case lifetime independent of navigation and short RPC calls. */
-import {useEffect,useId,useRef,useState,type ReactNode} from 'react'
+import {useEffect,useId,useRef,useState,useMemo,type ReactNode} from 'react'
 import {brandString} from '@deepseek-ai/dsh-brand'
 import {Button,Input,Switch,Toast} from '@deepseek-ai/dsh-client-ui-primitives'
 import type {HostObservable,InjectFace,PropsLocale,PropsRuntime} from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-plugin-manager/client'
 import {CONFIG_FIELDS,isConfigKey,type ConfigKey} from '../config-fields.ts'
 import {draftPatch,type FormDraft} from '../config-draft.ts'
-import type {ControlSnapshot,ControlFailure,SaveRequest,RestartRequest,StartRequest,RunRequest,ListRequest,CancelResponse,InspectResponse} from '../control-types.ts'
+import type {ControlSnapshot,ControlFailure,SaveRequest,RestartRequest,StartRequest,RunRequest,ListRequest,CancelResponse,InspectResponse,MediaPreview} from '../control-types.ts'
+import {attachMediaFiles,mediaTargets,MediaInputProblem} from '../media-input.ts'
 import type {RunId,RunAdmission,RunPage} from '../types.ts'
 
 /** Sanitized operation failure localized at the native page. */
@@ -39,8 +40,17 @@ function ConfigurationPage({t,read,save,restart,start,cancel,list,inspect,notify
  const id=useId(),live=useRef(true),editing=useRef(false),writing=useRef(false),readTurn=useRef(0),inspectTurn=useRef(0)
  const [snapshot,setSnapshot]=useState<ControlSnapshot|null>(null),[baseline,setBaseline]=useState<ControlSnapshot|null>(null),[draft,setDraft]=useState<FormDraft>({})
  const [loadFailed,setLoadFailed]=useState(false),[busy,setBusy]=useState(false),[refresh,setRefresh]=useState(0)
- const [source,setSource]=useState(sample),[caseError,setCaseError]=useState<string|null>(null),[selected,setSelected]=useState<RunId|null>(null),[report,setReport]=useState<InspectResponse|null>(null),[reportError,setReportError]=useState<string|null>(null)
+ const [source,setSource]=useState(sample),[uploading,setUploading]=useState(false),[mediaTarget,setMediaTarget]=useState(''),sourceVersion=useRef(0),[caseError,setCaseError]=useState<string|null>(null),[selected,setSelected]=useState<RunId|null>(null),[report,setReport]=useState<InspectResponse|null>(null),[reportError,setReportError]=useState<string|null>(null)
  const [ids,setIds]=useState<readonly RunId[]>([]),[next,setNext]=useState<RunId|null>(null)
+ const targets=useMemo(()=>mediaTargets(source),[source]),chosenTarget=targets.some(value=>value.id===mediaTarget)?mediaTarget:targets[0]?.id??''
+ const changeSource=(value:string)=>{sourceVersion.current++;setSource(value)}
+ async function upload(files:readonly File[]):Promise<void>{
+  if(!snapshot||!files.length||!chosenTarget)return
+  const version=sourceVersion.current;setUploading(true);setCaseError(null)
+  try{const value=await attachMediaFiles(source,chosenTarget,files,snapshot.config);if(!live.current)return;if(sourceVersion.current!==version)throw new MediaInputProblem('source-changed');changeSource(value)}
+  catch(error){if(live.current)setCaseError(error instanceof MediaInputProblem?t(`upload.${error.reason}`):t('upload.failed'))}
+  finally{if(live.current)setUploading(false)}
+ }
  const patch=baseline?draftPatch(draft,baseline.config):null,dirty=patch?.ok===false||Boolean(patch?.ok&&Object.keys(patch.patch).length)
  editing.current=dirty
  const message=(error:unknown)=>error instanceof PageProblem&&error.reason!=='unavailable'?t(`failure.${error.reason}`):t('unavailable')
@@ -86,7 +96,7 @@ function ConfigurationPage({t,read,save,restart,start,cancel,list,inspect,notify
   }catch(error){notify(message(error),false)}finally{writing.current=false;if(live.current)setBusy(false)}
  }
  async function runCase():Promise<void>{
-  if(writing.current||dirty||!baseline)return
+  if(uploading||writing.current||dirty||!baseline)return
   let scenario:unknown;try{scenario=JSON.parse(source)}catch(error){setCaseError(t('invalidJson'));return}
   writing.current=true;setBusy(true);setCaseError(null)
   const runId=brandString<RunId>(crypto.randomUUID())
@@ -117,11 +127,16 @@ function ConfigurationPage({t,read,save,restart,start,cancel,list,inspect,notify
    {patch?.ok===false&&<p role="alert">{t('failure.config-invalid')}</p>}
    <div className="imlab-actions"><Button type="submit" variant="primary" disabled={busy||active>0||!dirty||!patch?.ok}>{t('save')}</Button><Button type="button" variant="outline" disabled={busy||active>0||dirty||!snapshot.config.enabled} onClick={()=>{void write('restart')}}>{t('restart')}</Button><Button type="button" disabled={busy} onClick={()=>setRefresh(value=>value+1)}>{t('refresh')}</Button><Button type="button" disabled={busy||!dirty} onClick={()=>accept(snapshot,true)}>{t('discard')}</Button></div>
   </form>
-  <form className="imlab-case" onSubmit={event=>{event.preventDefault();void runCase()}}><h3>{t('case')}</h3><p className="imlab-help">{t('caseHelp')}</p><label className="imlab-visually-hidden" htmlFor={`${id}-case`}>{t('case')}</label><textarea id={`${id}-case`} rows={14} value={source} disabled={busy} spellCheck={false} onChange={event=>setSource(event.currentTarget.value)}/><div className="imlab-actions"><Button type="submit" variant="primary" disabled={!canStart}>{t('run')}</Button></div>{caseError&&<p role="alert">{caseError}</p>}</form>
+  <form className="imlab-case" onSubmit={event=>{event.preventDefault();void runCase()}}><h3>{t('case')}</h3><p className="imlab-help">{t('caseHelp')}</p><label className="imlab-visually-hidden" htmlFor={`${id}-case`}>{t('case')}</label><textarea id={`${id}-case`} rows={14} value={source} disabled={busy} spellCheck={false} onChange={event=>changeSource(event.currentTarget.value)}/><div className="imlab-upload"><label>{t('mediaTarget')}<select value={chosenTarget} disabled={busy||uploading||!targets.length} onChange={event=>setMediaTarget(event.currentTarget.value)}>{targets.map(value=><option key={value.id} value={value.id}>{value.label}</option>)}</select></label><label>{t('mediaFiles')}<input type="file" multiple disabled={busy||uploading||!snapshot.config.mediaEnabled||!chosenTarget} onChange={event=>{const files=Array.from(event.currentTarget.files??[]);event.currentTarget.value='';void upload(files)}}/></label><p className="imlab-help">{t(snapshot.config.mediaEnabled?'mediaUploadHelp':'mediaUploadDisabled')}</p></div><div className="imlab-actions"><Button type="submit" variant="primary" disabled={!canStart||uploading}>{t('run')}</Button></div>{caseError&&<p role="alert">{caseError}</p>}</form>
   <section className="imlab-reports"><h3>{t('report')}</h3><p className="imlab-help">{t('previewHelp')}</p><label htmlFor={`${id}-reports`}>{t('choose')}</label><select id={`${id}-reports`} value={selected??''} onChange={event=>{setSelected(event.currentTarget.value?brandString<RunId>(event.currentTarget.value):null);setReport(null);setReportError(null)}}><option value="">{ids.length?t('choose'):t('empty')}</option>{[...new Set([...ids,...selected?[selected]:[]])].map(value=><option value={value} key={value}>{value}</option>)}</select>
    <div className="imlab-actions"><Button type="button" disabled={!next} onClick={()=>{void more()}}>{t('more')}</Button><Button type="button" disabled={!selected||!snapshot.runtime?.activeRunIds.includes(selected)} onClick={()=>{void cancelCase()}}>{t('cancel')}</Button>{selected&&snapshot.downloads&&!snapshot.runtime?.activeRunIds.includes(selected)&&<a className="imlab-download" href={`/api/im-lab-report?runId=${encodeURIComponent(selected)}`} download>{t('download')}</a>}</div>
    {reportError&&<p role="alert">{reportError}</p>}
-   {report&&<section aria-live="polite" className="imlab-output"><p>{t('outcome',{phase:t(`phase.${report.result.phase}`),inputs:report.result.inputCount,captures:report.result.captureCount})}</p>{report.result.failure&&<p>{t('diagnostic',{code:report.result.failure})}</p>}{report.incompleteTail&&<p>{t('incomplete')}</p>}<p>{t('unresolved',{count:report.result.unresolvedMedia})}</p>{report.captures.map((capture,index)=><article key={index}><strong>{capture.conversation}</strong><pre>{capture.text}</pre>{capture.truncated&&<p className="imlab-help">{t('truncated')}</p>}{capture.nonTextParts>0&&<p className="imlab-help">{t('parts',{count:capture.nonTextParts})}</p>}</article>)}{report.omittedCaptures>0&&<p>{t('omitted',{count:report.omittedCaptures})}</p>}</section>}
+   {report&&<section aria-live="polite" className="imlab-output"><p>{t('outcome',{phase:t(`phase.${report.result.phase}`),inputs:report.result.inputCount,captures:report.result.captureCount})}</p>{report.result.failure&&<p>{t('diagnostic',{code:report.result.failure})}</p>}{report.incompleteTail&&<p>{t('incomplete')}</p>}<p>{t('unresolved',{count:report.result.unresolvedMedia})}</p>{report.captures.map((capture,index)=><article key={index}><strong>{capture.conversation}</strong><pre>{capture.text}</pre>{capture.truncated&&<p className="imlab-help">{t('truncated')}</p>}{capture.nonTextParts>0&&<p className="imlab-help">{t('parts',{count:capture.nonTextParts})}</p>}</article>)}{selected&&report.originals.length>0&&<section className="imlab-originals"><h3>{t('originals')}</h3>{report.originals.map(item=><OriginalPreview key={item.attachmentId} item={item} runId={selected} available={snapshot.downloads&&!report.active} t={t}/>)}</section>}{report.omittedOriginals>0&&<p>{t('omittedOriginals',{count:report.omittedOriginals})}</p>}{report.omittedCaptures>0&&<p>{t('omitted',{count:report.omittedCaptures})}</p>}</section>}
   </section>
  </section>
+}
+
+function OriginalPreview({item,runId,available,t}:PropsLocale<'imLab'>&{item:MediaPreview;runId:RunId;available:boolean}):ReactNode{
+ const [failed,setFailed]=useState(false),url=`/api/im-lab-media?runId=${encodeURIComponent(runId)}&attachmentId=${encodeURIComponent(item.attachmentId)}`
+ return <article className="imlab-original"><strong>{item.fileName}</strong><p>{item.mime} · {t('mediaSize',{bytes:item.bytes})}{item.width&&item.height?` · ${item.width} × ${item.height}`:''}</p><code>{item.sha256}</code>{available?<>{!failed&&(item.mime.startsWith('image/')?<img loading="lazy" src={url} alt={item.fileName} onError={()=>setFailed(true)}/>:item.mime.startsWith('audio/')?<audio controls preload="none" src={url} onError={()=>setFailed(true)}/>:item.mime.startsWith('video/')?<video controls preload="none" src={url} onError={()=>setFailed(true)}/>:null)}{failed&&<p role="alert">{t('mediaReadFailed')}</p>}<a className="imlab-download" href={url} download={item.fileName}>{t('downloadOriginal')}</a></>:<p>{t('mediaAfterRun')}</p>}</article>
 }

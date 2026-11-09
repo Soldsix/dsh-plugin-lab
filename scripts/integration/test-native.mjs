@@ -14,12 +14,12 @@ import {verifyInstalledArchive} from './verify-installed.mjs'
 
 const root=fileURLToPath(new URL('../../',import.meta.url)),args=process.argv
 const argument=name=>{const index=args.indexOf(name);assert.ok(index>=0&&args[index+1],'Required '+name);return args[index+1]}
-const library=await realpath(argument('--im-kit-archive')),chat=await realpath(argument('--chat-archive')),manifest=JSON.parse(await readFile(join(root,'package.json'),'utf8'))
+const library=await realpath(argument('--im-kit-archive')),chat=await realpath(argument('--chat-archive')),media=await realpath(argument('--media-archive')),manifest=JSON.parse(await readFile(join(root,'package.json'),'utf8'))
 const runs=join(root,'.test-artifacts','native');await mkdir(runs,{recursive:true})
 const resume=args.indexOf('--resume-run'),resumed=resume>=0,area=resumed?await realpath(args[resume+1]):await mkdtemp(join(runs,'install-'))
 const owned=relative(runs,area);assert.ok(!owned.startsWith('..')&&!isAbsolute(owned),'Resume target escaped owned native-test directory')
 const attempt=await mkdtemp(join(area,'attempt-')),home=join(area,'home'),profile='plugin-lab-native',profileRoot=join(home,'profiles',profile),archives=[]
-for(const source of[library,chat,join(root,'artifacts',manifest.name+'-'+manifest.version+'.tgz')]){const path=join(attempt,basename(source));await copyFile(source,path);archives.push({path,name:basename(source),sha256:createHash('sha256').update(await readFile(path)).digest('hex')})}
+for(const source of[library,chat,join(root,'artifacts',manifest.name+'-'+manifest.version+'.tgz'),media]){const path=join(attempt,basename(source));await copyFile(source,path);archives.push({path,name:basename(source),sha256:createHash('sha256').update(await readFile(path)).digest('hex')})}
 await writeFile(join(attempt,'inputs.json'),JSON.stringify(archives.map(({name,sha256})=>({name,sha256})),null,2)+'\n')
 const captures=[];let active=0,peak=0,holds=0,parallelArrivals=0,releaseParallel
 const parallel=new Promise(resolve=>{releaseParallel=resolve})
@@ -48,7 +48,7 @@ const server=createServer(async(request,response)=>{
 server.listen(0,'127.0.0.1');await once(server,'listening');server.unref()
 const env=Object.fromEntries(Object.entries(process.env).filter(([key])=>!/KEY|SECRET|TOKEN|PASSWORD/i.test(key)))
 await mkdir(join(attempt,'temp'),{recursive:true})
-Object.assign(env,{DSH_HOME:home,TEMP:join(attempt,'temp'),TMP:join(attempt,'temp'),DSH_PRIMARY_RUNTIME:'',DSH_SYSTEM_PROMPT:'Synthetic local Lab acceptance. No private persona or skills.',DEEPSEEK_API_KEY:'synthetic-loopback-only',DEEPSEEK_BASE_URL:'http://127.0.0.1:'+server.address().port+'/anthropic'})
+Object.assign(env,{NPM_CONFIG_CACHE:join(root,'.npm-cache'),DSH_HOME:home,TEMP:join(attempt,'temp'),TMP:join(attempt,'temp'),DSH_PRIMARY_RUNTIME:'',DSH_SYSTEM_PROMPT:'Synthetic local Lab acceptance. No private persona or skills.',DEEPSEEK_API_KEY:'synthetic-loopback-only',DEEPSEEK_BASE_URL:'http://127.0.0.1:'+server.address().port+'/anthropic'})
 const dsh=join(root,'node_modules','@deepseek-ai','dsh','lib','bin.js'),commands=[]
 async function run(argv,cwd){
  const deadline=AbortSignal.timeout(300000),child=spawn(process.execPath,argv,{cwd,env,windowsHide:true,signal:deadline,stdio:['ignore','pipe','pipe']})
@@ -63,15 +63,17 @@ const profileManifest=JSON.parse(await readFile(join(profileRoot,'package.json')
 await writeFile(join(profileRoot,'.npmrc'),'package-import-method=copy\nstore-dir='+join(root,'.test-artifacts','pnpm-store').replaceAll('\\','/')+'\ncache-dir='+join(root,'.test-artifacts','pnpm-cache').replaceAll('\\','/')+'\n')
 const pnpm=await pnpmScript(root)
 const peerNames=['@deepseek-ai/cordis@~4.1.0','@deepseek-ai/cordis-plugin-loader@~1.1.0','@deepseek-ai/schemastery@~3.19.0',...['agent','agent-preset-registry','app-boot','brand','llm','session','session-persistence','tools','scope','config-editor','typert-protocol','llm-deepseek-api-key','client-connection'].map(name=>'@deepseek-ai/dsh-'+name+'@0.2.2-rc.1')]
-await run([pnpm,'add',archives[0].path,'@deepseek-ai/dsh@0.2.2-rc.1',...peerNames,'--ignore-scripts'],profileRoot)
+await run([pnpm,'add',archives[0].path,archives[3].path,'@deepseek-ai/dsh@0.2.2-rc.1',...peerNames,'--ignore-scripts'],profileRoot)
 await run([dsh,'plugin','--profile',profile,'add',archives[1].path],area);await run([dsh,'plugin','--profile',profile,'add',archives[2].path],area)
 for(;;){const missing=await requiredProfilePeers(profileRoot);if(!missing.length)break;await run([pnpm,'add',...missing,'--ignore-scripts'],profileRoot)}
-const installedFiles={chat:await verifyInstalledArchive(archives[1].path,join(profileRoot,'node_modules','dsh-qq-chat'),join(attempt,'chat-installed-files.json')),lab:await verifyInstalledArchive(archives[2].path,join(profileRoot,'node_modules','dsh-plugin-lab'),join(attempt,'lab-installed-files.json'))}
+const installedFiles={media:await verifyInstalledArchive(archives[3].path,join(profileRoot,'node_modules','dsh-media-kit'),join(attempt,'media-installed-files.json')),chat:await verifyInstalledArchive(archives[1].path,join(profileRoot,'node_modules','dsh-qq-chat'),join(attempt,'chat-installed-files.json')),lab:await verifyInstalledArchive(archives[2].path,join(profileRoot,'node_modules','dsh-plugin-lab'),join(attempt,'lab-installed-files.json'))}
+await copyFile(fileURLToPath(new URL('./native-probe.mjs',import.meta.url)),join(profileRoot,'lab-native-probe.mjs'))
+await copyFile(fileURLToPath(new URL('./media-fixture.mjs',import.meta.url)),join(profileRoot,'lab-media-fixture.mjs'))
 const overlay=[
- {id:'plugin-lab-runtime',config:{enabled:true,namespace:'lab-'+basename(attempt).toLowerCase(),dataPath:join(attempt,'lab-data')}},
+ {id:'plugin-lab-runtime',config:{enabled:true,mediaEnabled:true,namespace:'lab-'+basename(attempt).toLowerCase(),dataPath:join(attempt,'lab-data')}},
  {id:'qq-chat-runtime',config:{enabled:true,namespace:'lab-chat-'+basename(attempt).toLowerCase(),databasePath:join(attempt,'chat-state.sqlite3'),workspacePath:join(attempt,'workspace'),presetId:'lab-native-fixture',provider:'deepseek-official',model:'deepseek-flash',reasoningEffort:'off',maxTokens:128}},
  {id:'session-telemetry-otel',disabled:true},
- {insert:[{id:'lab-preset-registry',name:'@deepseek-ai/dsh-agent-preset-registry',config:{default:'lab-native-fixture'}},{id:'lab-preset-fixture',name:'@deepseek-ai/dsh-agent-preset',config:{id:'lab-native-fixture',plugins:[]}},{id:'lab-native-probe',name:pathToFileURL(fileURLToPath(new URL('./native-probe.mjs',import.meta.url))).href,config:{resultPath:join(attempt,'result.json'),statusUrl:'http://127.0.0.1:'+server.address().port+'/fixture/status'}}]},
+ {insert:[{id:'lab-media-fixture',name:pathToFileURL(join(profileRoot,'lab-media-fixture.mjs')).href},{id:'lab-preset-registry',name:'@deepseek-ai/dsh-agent-preset-registry',config:{default:'lab-native-fixture'}},{id:'lab-preset-fixture',name:'@deepseek-ai/dsh-agent-preset',config:{id:'lab-native-fixture',plugins:[]}},{id:'lab-native-probe',name:pathToFileURL(join(profileRoot,'lab-native-probe.mjs')).href,config:{resultPath:join(attempt,'result.json'),statusUrl:'http://127.0.0.1:'+server.address().port+'/fixture/status'}}]},
 ]
 await writeFile(join(profileRoot,'cordis.patch.yml'),JSON.stringify(overlay,null,2)+'\n')
 const profileDsh=join(profileRoot,'node_modules','@deepseek-ai','dsh','lib','bin.js'),child=spawn(process.execPath,[profileDsh,'--profile',profile],{cwd:area,env,windowsHide:true,stdio:['pipe','pipe','pipe']})

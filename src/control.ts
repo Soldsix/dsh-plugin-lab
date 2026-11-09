@@ -1,4 +1,6 @@
 /** Owner control remains mounted while the dedicated local runtime is disabled. */
+import {identifier} from 'dsh-im-kit'
+import {mediaReference} from 'dsh-media-kit/scoped-native'
 import type {Context} from '@deepseek-ai/cordis'
 import type {Entry} from '@deepseek-ai/cordis-plugin-loader'
 import z from '@deepseek-ai/schemastery'
@@ -30,7 +32,7 @@ function settings(value:unknown):Settings{
 }
 function decode<T>(schema:{parse(value:unknown):T},value:unknown):T{try{return schema.parse(value)}catch(error){throw problem('request-invalid')}}
 function sanitized(error:unknown):RemoteError<'im-lab/control'>{
- if(error instanceof LabError&&['capacity','source-conflict','journal-unavailable','journal-limit','journal-invalid','invalid-scenario','closed','cancelled'].includes(error.code))return problem(error.code as ControlFailure)
+ if(error instanceof LabError&&['capacity','source-conflict','journal-unavailable','journal-limit','journal-invalid','invalid-scenario','closed','cancelled','media-unavailable','media-invalid','media-failed'].includes(error.code))return problem(error.code as ControlFailure)
  return problem('apply-failed')
 }
 
@@ -43,15 +45,18 @@ export class LabControl extends TypertRemoteService{
  private readonly runs=new Set<Promise<RunResult>>()
  private tail:Promise<void>=Promise.resolve()
  private downloadMounted=false
+ private changing=false
  constructor(ctx:Context,private readonly config:ControlConfig){
   super(ctx,'imLabControl')
   if(!/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(config.targetEntryId))throw new Error('targetEntryId must name a profile row')
   ctx.effect(()=>async()=>{this.lifetime.abort();await this.tail;await Promise.allSettled([...this.downloads,...this.runs])})
-  ctx.inject(['connection'],child=>child.effect(()=>{
-   const dispose=child.connection.fetch.register({path:'/api/im-lab-report',methods:['GET'],requestBody:'buffered',fetch:request=>this.download(request)})
-   this.downloadMounted=true
-   return async()=>{this.downloadMounted=false;await dispose()}
-  }))
+  ctx.inject(['connection'],child=>{
+   for(const [path,fetch]of [['/api/im-lab-report',(request:Request,signal:AbortSignal)=>this.download(request,signal)],['/api/im-lab-media',(request:Request,signal:AbortSignal)=>this.downloadMedia(request,signal)]] as const)child.effect(()=>{
+    const lifetime=new AbortController(),dispose=child.connection.fetch.register({path,methods:['GET'],requestBody:'buffered',fetch:request=>fetch(request,lifetime.signal)})
+    return async()=>{lifetime.abort();await dispose()}
+   })
+   child.effect(()=>{this.downloadMounted=true;return()=>{this.downloadMounted=false}})
+  })
  }
  private owner():void{if(principalOf(this.ctx.invocation))throw problem('forbidden');if(this.lifetime.signal.aborted||this.ctx.invocation?.signal.aborted)throw problem('cancelled')}
  private target():Entry{
@@ -84,9 +89,12 @@ export class LabControl extends TypertRemoteService{
    if(configRevision(current)!==edit.revision)throw problem('revision-conflict')
    if(this.ctx.get('imLab')?.status().active||this.downloads.size)throw problem('busy')
    settings({...current,...edit.patch})
-   let conflict=false
-   try{await this.ctx.configEditor.edit(entry,raw=>{if(configRevision(settings(entry.fiber?.effectiveConfig))!==edit.revision){conflict=true;throw problem('revision-conflict')}return{...raw,...edit.patch}})}catch(error){throw problem(conflict?'revision-conflict':'apply-failed')}
-   return this.snapshot()
+   this.changing=true
+   try{
+    let conflict=false
+    try{await this.ctx.configEditor.edit(entry,raw=>{if(configRevision(settings(entry.fiber?.effectiveConfig))!==edit.revision){conflict=true;throw problem('revision-conflict')}return{...raw,...edit.patch}})}catch(error){throw problem(conflict?'revision-conflict':'apply-failed')}
+    return this.snapshot()
+   }finally{this.changing=false}
   })
  }
  /**
@@ -102,8 +110,9 @@ export class LabControl extends TypertRemoteService{
    if(configRevision(config)!==edit.revision)throw problem('revision-conflict')
    if(this.ctx.get('imLab')?.status().active||this.downloads.size)throw problem('busy')
    if(!config.enabled||entry.disabled)throw problem('runtime-unavailable')
-   try{await entry.fiber?.restart()}catch(error){throw problem('apply-failed')}
-   return this.snapshot()
+   this.changing=true
+   try{try{await entry.fiber?.restart()}catch(error){throw problem('apply-failed')}return this.snapshot()}
+   finally{this.changing=false}
   })
  }
  /**
@@ -147,22 +156,42 @@ export class LabControl extends TypertRemoteService{
  async inspect(request:unknown):Promise<InspectResponse>{
   this.owner();const edit=decode(runSchema,request)
   try{
-   const runtime=this.runtime(),active=runtime.status().activeRunIds.includes(edit.runId),stored=await runtime.inspect(edit.runId),all=stored.events.filter(event=>event.type==='capture')
-   return{result:stored.result,active,incompleteTail:stored.incompleteTail,omittedCaptures:Math.max(0,all.length-this.config.previewCaptures),captures:all.slice(0,this.config.previewCaptures).map(({capture})=>{
+   const runtime=this.runtime(),active=runtime.status().activeRunIds.includes(edit.runId),stored=await runtime.inspect(edit.runId),all=stored.events.filter(event=>event.type==='capture'),media=stored.events.filter(event=>event.type==='media-grant')
+   return{result:stored.result,active,incompleteTail:stored.incompleteTail,omittedCaptures:Math.max(0,all.length-this.config.previewCaptures),omittedOriginals:Math.max(0,media.length-this.config.previewCaptures),originals:media.slice(0,this.config.previewCaptures).map(({grant})=>{const d=grant.stored.descriptor;return{attachmentId:identifier('im.attachment',grant.reference),fileName:d.fileName,mime:d.mime,bytes:d.byteLength,sha256:d.sha256,...d.image?{width:d.image.width,height:d.image.height}:{}}}),captures:all.slice(0,this.config.previewCaptures).map(({capture})=>{
     const text=capture.parts.filter(part=>part.type==='text').map(part=>part.text).join('\n')
     return{conversation:capture.conversation,kind:capture.kind,text:text.slice(0,this.config.previewChars),truncated:text.length>this.config.previewChars,nonTextParts:capture.parts.filter(part=>part.type!=='text').length}
    })}
   }catch(error){throw sanitized(error)}
  }
- private async download(request:Request):Promise<Response>{
+ private reserveDownload():()=>void{
+  let release!:()=>void;const pending=new Promise<void>(resolve=>{release=resolve});this.downloads.add(pending)
+  return()=>{this.downloads.delete(pending);release()}
+ }
+ private async downloadMedia(request:Request,scope:AbortSignal):Promise<Response>{
+  const params=new URL(request.url).searchParams
+  if([...params.keys()].some(key=>key!=='runId'&&key!=='attachmentId')||params.getAll('runId').length!==1||params.getAll('attachmentId').length!==1)return new Response(null,{status:400})
+  const parsed=runSchema.safeParse({runId:params.get('runId')});if(!parsed.success)return new Response(null,{status:400})
+  const reference=params.get('attachmentId');try{mediaReference(reference??'')}catch(error){return new Response(null,{status:400})}
+  if(this.changing)return new Response(null,{status:409})
+  const finish=this.reserveDownload()
+  try{
+   const original=await this.runtime().readMedia(parsed.data.runId,reference,AbortSignal.any([request.signal,this.lifetime.signal,scope])),descriptor=original.descriptor
+   const name=encodeURIComponent(descriptor.fileName).replace(/['()*]/g,value=>'%'+value.charCodeAt(0).toString(16).toUpperCase()),inline=/^(?:image\/(?:png|jpeg|gif|webp)|audio\/|video\/)/.test(descriptor.mime)
+   return new Response(original.copyBytes(),{headers:{'Content-Type':descriptor.mime,'Content-Length':String(descriptor.byteLength),'Content-Disposition':`${inline?'inline':'attachment'}; filename*=UTF-8''${name}`,'Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'none'; sandbox"}})
+  }catch(error){return new Response(null,{status:error instanceof LabError&&error.code==='capacity'?409:404})}
+  finally{finish()}
+ }
+ private async download(request:Request,scope:AbortSignal):Promise<Response>{
   const params=new URL(request.url).searchParams
   if([...params.keys()].some(key=>key!=='runId')||params.getAll('runId').length!==1)return new Response(null,{status:400})
   const parsed=runSchema.safeParse({runId:params.get('runId')});if(!parsed.success)return new Response(null,{status:400})
+  if(this.changing)return new Response(null,{status:409})
+  const finish=this.reserveDownload()
   try{
-   const exported=await this.runtime().export(parsed.data.runId,AbortSignal.any([request.signal,this.lifetime.signal]))
-   this.downloads.add(exported.done);void exported.done.then(()=>this.downloads.delete(exported.done),()=>this.downloads.delete(exported.done))
+   const exported=await this.runtime().export(parsed.data.runId,AbortSignal.any([request.signal,this.lifetime.signal,scope]))
+   void exported.done.then(finish,finish)
    return new Response(exported.body,{headers:{'Content-Type':'application/x-ndjson; charset=utf-8','Content-Length':String(exported.size),'Content-Disposition':`attachment; filename="${parsed.data.runId}.jsonl"`,'Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'none'; sandbox"}})
-  }catch(error){return new Response(null,{status:error instanceof LabError&&error.code==='capacity'?409:404})}
+  }catch(error){finish();return new Response(null,{status:error instanceof LabError&&error.code==='capacity'?409:404})}
  }
 }
 export default LabControl

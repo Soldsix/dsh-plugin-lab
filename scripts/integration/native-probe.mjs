@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict'
 import {writeFile} from 'node:fs/promises'
 import {setTimeout as delay} from 'node:timers/promises'
-export const inject=['im','imLab','qqChat','imLabControl','configEditor','typertGateway','remoteAccess','connection']
+export const inject=['imMedia','im','imLab','qqChat','imLabControl','configEditor','typertGateway','remoteAccess','connection']
 const source=(text,directed=true)=>({title:'Synthetic native Lab case',actors:['alice'],conversations:[{id:'lounge',kind:'group'}],stages:[{inputs:[{id:'first',actor:'alice',conversation:'lounge',text,directed}]}]})
 export function apply(ctx,config){const work=probe(ctx,config);ctx.effect(()=>async()=>{await work})}
 async function probe(ctx,config){
@@ -68,8 +68,19 @@ async function probe(ctx,config){
    const result=await ctx.imLab.run({runId:outputId,scenario:outputCase},new AbortController().signal);assert.equal(result.phase,'completed');assert.equal(result.captureCount,2)
    const saved=await ctx.imLab.inspect(outputId),generated=saved.events.filter(event=>event.type==='capture');assert.equal(seen[1].parts.find(part=>part.type==='reply').messageId,generated[0].capture.messageId)
    assert.equal((await ctx.imLab.run({runId:outputId,scenario:outputCase},new AbortController().signal)).replayed,true);assert.equal(seen.length,2)
-  }finally{unsubscribe()}
+  }finally{await unsubscribe()}
   checks.push('generated-output-quote-reaches-native-chat-with-exact-receipt-id-and-no-replay')
+  const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a/1UAAAAASUVORK5CYII=','base64'),wav=Buffer.alloc(52)
+  wav.write('RIFF',0);wav.writeUInt32LE(44,4);wav.write('WAVEfmt ',8);wav.writeUInt32LE(16,16);wav.writeUInt16LE(1,20);wav.writeUInt16LE(1,22);wav.writeUInt32LE(8000,24);wav.writeUInt32LE(16000,28);wav.writeUInt16LE(2,32);wav.writeUInt16LE(16,34);wav.write('data',36);wav.writeUInt32LE(8,40)
+  const mediaId='native-lab-media-case-0001',mediaCase={title:'Native original media',actors:['alice'],conversations:[{id:'lounge',kind:'group'}],assets:[{id:'pixel',fileName:'fixture.jpg',base64:png.toString('base64')},{id:'voice',fileName:'voice.mp3',base64:wav.toString('base64')}],stages:[{inputs:[{id:'input',actor:'alice',conversation:'lounge',text:'LAB_MEDIA_FIXTURE',directed:false,media:[{type:'image',asset:'pixel'},{type:'audio',asset:'voice'}]}]}]}
+  const mediaResult=await ctx.imLab.run({runId:mediaId,scenario:mediaCase},new AbortController().signal);assert.equal(mediaResult.phase,'completed');assert.equal(mediaResult.captureCount,1);assert.equal(mediaResult.unresolvedMedia,0)
+  const mediaView=await invoke('inspect',{request:{runId:mediaId}});assert.equal(mediaView.originals.length,3);assert.ok(!JSON.stringify(mediaView).includes('sha256:'))
+  for(const [index,original]of mediaView.originals.entries()){
+   const url='http://localhost/api/im-lab-media?runId='+mediaId+'&attachmentId='+original.attachmentId;assert.equal((await handler.fetch(new Request(url),guest)).status,403)
+   const response=await handler.fetch(new Request(url),peer);assert.equal(response.status,200);const bytes=Buffer.from(await response.arrayBuffer());if(index===0)assert.deepEqual(bytes,png);else if(index===1)assert.deepEqual(bytes,wav);else{assert.ok(bytes.toString().includes('LAB_GENERATED_FILE'));assert.ok(response.headers.get('content-disposition').startsWith('attachment;'))}
+  }
+  assert.equal((await ctx.imLab.run({runId:mediaId,scenario:mediaCase},new AbortController().signal)).replayed,true);assert.equal(ctx.imMedia.status().providers,0);assert.equal(ctx.imMedia.status().pending,0)
+  checks.push('native-media-inputs-and-generated-output-retain-verbatim-bytes-with-owner-only-downloads-and-no-model-call-or-replay')
   const exported=await ctx.imLab.export(firstId,new AbortController().signal),report=await new Response(exported.body).text();await exported.done
   assert.ok(report.includes('LAB_REPLY_1')&&report.includes('LAB_REPLY_2'))
   checks.push('native-full-report-export-retains-all-structured-captures')

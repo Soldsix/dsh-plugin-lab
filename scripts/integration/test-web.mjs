@@ -1,5 +1,7 @@
 /** Install independent archives in a fresh SDK profile and test the real native Chat path. */
 import assert from 'node:assert/strict'
+import sharp from 'sharp'
+import gifenc from 'gifenc'
 import {pnpmScript} from './pnpm.mjs'
 import {requiredProfilePeers} from './profile-peers.mjs'
 import {spawn} from 'node:child_process'
@@ -14,12 +16,12 @@ import {verifyInstalledArchive} from './verify-installed.mjs'
 
 const root=fileURLToPath(new URL('../../',import.meta.url)),args=process.argv
 const argument=name=>{const index=args.indexOf(name);assert.ok(index>=0&&args[index+1],'Required '+name);return args[index+1]}
-const library=await realpath(argument('--im-kit-archive')),chat=await realpath(argument('--chat-archive')),manifest=JSON.parse(await readFile(join(root,'package.json'),'utf8'))
+const library=await realpath(argument('--im-kit-archive')),chat=await realpath(argument('--chat-archive')),media=await realpath(argument('--media-archive')),manifest=JSON.parse(await readFile(join(root,'package.json'),'utf8'))
 const runs=join(root,'.test-artifacts','native-web');await mkdir(runs,{recursive:true})
 const resume=args.indexOf('--resume-run'),resumed=resume>=0,area=resumed?await realpath(args[resume+1]):await mkdtemp(join(runs,'install-'))
 const owned=relative(runs,area);assert.ok(!owned.startsWith('..')&&!isAbsolute(owned),'Resume target escaped owned native-test directory')
 const attempt=await mkdtemp(join(area,'attempt-')),home=join(area,'home'),profile='plugin-lab-web',profileRoot=join(home,'profiles',profile),archives=[]
-for(const source of[library,chat,join(root,'artifacts',manifest.name+'-'+manifest.version+'.tgz')]){const path=join(attempt,basename(source));await copyFile(source,path);archives.push({path,name:basename(source),sha256:createHash('sha256').update(await readFile(path)).digest('hex')})}
+for(const source of[library,chat,join(root,'artifacts',manifest.name+'-'+manifest.version+'.tgz'),media]){const path=join(attempt,basename(source));await copyFile(source,path);archives.push({path,name:basename(source),sha256:createHash('sha256').update(await readFile(path)).digest('hex')})}
 await writeFile(join(attempt,'inputs.json'),JSON.stringify(archives.map(({name,sha256})=>({name,sha256})),null,2)+'\n')
 const captures=[];let active=0,peak=0,holds=0,parallelArrivals=0,releaseParallel
 const parallel=new Promise(resolve=>{releaseParallel=resolve})
@@ -48,7 +50,7 @@ const server=createServer(async(request,response)=>{
 server.listen(0,'127.0.0.1');await once(server,'listening');server.unref()
 const env=Object.fromEntries(Object.entries(process.env).filter(([key])=>!/KEY|SECRET|TOKEN|PASSWORD/i.test(key)))
 await mkdir(join(attempt,'temp'),{recursive:true})
-Object.assign(env,{DSH_HOME:home,TEMP:join(attempt,'temp'),TMP:join(attempt,'temp'),DSH_PRIMARY_RUNTIME:'',DSH_SYSTEM_PROMPT:'Synthetic local Lab acceptance. No private persona or skills.',DEEPSEEK_API_KEY:'synthetic-loopback-only',DEEPSEEK_BASE_URL:'http://127.0.0.1:'+server.address().port+'/anthropic'})
+Object.assign(env,{NPM_CONFIG_CACHE:join(root,'.npm-cache'),DSH_HOME:home,TEMP:join(attempt,'temp'),TMP:join(attempt,'temp'),DSH_PRIMARY_RUNTIME:'',DSH_SYSTEM_PROMPT:'Synthetic local Lab acceptance. No private persona or skills.',DEEPSEEK_API_KEY:'synthetic-loopback-only',DEEPSEEK_BASE_URL:'http://127.0.0.1:'+server.address().port+'/anthropic'})
 const dsh=join(root,'node_modules','@deepseek-ai','dsh','lib','bin.js'),commands=[]
 async function run(argv,cwd){
  const deadline=AbortSignal.timeout(300000),child=spawn(process.execPath,argv,{cwd,env,windowsHide:true,signal:deadline,stdio:['ignore','pipe','pipe']})
@@ -63,19 +65,20 @@ const profileManifest=JSON.parse(await readFile(join(profileRoot,'package.json')
 await writeFile(join(profileRoot,'.npmrc'),'package-import-method=copy\nstore-dir='+join(root,'.test-artifacts','pnpm-store').replaceAll('\\','/')+'\ncache-dir='+join(root,'.test-artifacts','pnpm-cache').replaceAll('\\','/')+'\n')
 const pnpm=await pnpmScript(root)
 const peerNames=['@deepseek-ai/cordis@~4.1.0','@deepseek-ai/cordis-plugin-loader@~1.1.0','@deepseek-ai/schemastery@~3.19.0',...['agent','agent-preset-registry','app-boot','brand','llm','session','session-persistence','tools','scope','config-editor','typert-protocol','llm-deepseek-api-key','client-connection'].map(name=>'@deepseek-ai/dsh-'+name+'@0.2.2-rc.1')]
-await run([pnpm,'add',archives[0].path,'@deepseek-ai/dsh@0.2.2-rc.1',...peerNames,'--ignore-scripts'],profileRoot)
+await run([pnpm,'add',archives[0].path,archives[3].path,'@deepseek-ai/dsh@0.2.2-rc.1',...peerNames,'--ignore-scripts'],profileRoot)
 await run([dsh,'plugin','--profile',profile,'add',archives[1].path],area);await run([dsh,'plugin','--profile',profile,'add',archives[2].path],area)
 for(;;){const missing=await requiredProfilePeers(profileRoot);if(!missing.length)break;await run([pnpm,'add',...missing,'--ignore-scripts'],profileRoot)}
-const installedFiles={chat:await verifyInstalledArchive(archives[1].path,join(profileRoot,'node_modules','dsh-qq-chat'),join(attempt,'chat-installed-files.json')),lab:await verifyInstalledArchive(archives[2].path,join(profileRoot,'node_modules','dsh-plugin-lab'),join(attempt,'lab-installed-files.json'))}
+const installedFiles={media:await verifyInstalledArchive(archives[3].path,join(profileRoot,'node_modules','dsh-media-kit'),join(attempt,'media-installed-files.json')),chat:await verifyInstalledArchive(archives[1].path,join(profileRoot,'node_modules','dsh-qq-chat'),join(attempt,'chat-installed-files.json')),lab:await verifyInstalledArchive(archives[2].path,join(profileRoot,'node_modules','dsh-plugin-lab'),join(attempt,'lab-installed-files.json'))}
 const browserIndex=args.indexOf('--browser-cache')
 process.env.PLAYWRIGHT_BROWSERS_PATH=browserIndex>=0?await realpath(args[browserIndex+1]):process.env.PLAYWRIGHT_BROWSERS_PATH??join(root,'.test-artifacts','browsers')
 const {chromium}=await import('playwright')
+await copyFile(fileURLToPath(new URL('./media-fixture.mjs',import.meta.url)),join(profileRoot,'lab-media-fixture.mjs'))
 const overlay=[
  {id:'plugin-lab-runtime',config:{enabled:false,namespace:'lab-'+basename(attempt).toLowerCase(),dataPath:join(attempt,'lab-data')}},
  {id:'plugin-lab-control',config:{statusRefreshMs:250}},
  {id:'qq-chat-runtime',config:{enabled:true,namespace:'lab-chat-'+basename(attempt).toLowerCase(),databasePath:join(attempt,'chat-state.sqlite3'),workspacePath:join(attempt,'workspace'),presetId:'lab-web-fixture',provider:'deepseek-official',model:'deepseek-flash',reasoningEffort:'off',maxTokens:128}},
  {id:'session-title-llm',disabled:true},{id:'session-telemetry-otel',disabled:true},
- {insert:[{id:'lab-preset-fixture',name:'@deepseek-ai/dsh-agent-preset',config:{id:'lab-web-fixture',plugins:[]}}]},
+ {insert:[{id:'lab-media-fixture',name:pathToFileURL(join(profileRoot,'lab-media-fixture.mjs')).href},{id:'lab-preset-fixture',name:'@deepseek-ai/dsh-agent-preset',config:{id:'lab-web-fixture',plugins:[]}}]},
 ]
 await writeFile(join(profileRoot,'cordis.patch.yml'),JSON.stringify(overlay,null,2)+'\n')
 const profileDsh=join(profileRoot,'node_modules','@deepseek-ai','dsh','lib','bin.js'),child=spawn(process.execPath,[profileDsh,'--profile',profile,'--host','127.0.0.1','--port','0','--no-open'],{cwd:area,env,windowsHide:true,stdio:['pipe','pipe','pipe']})
@@ -113,6 +116,25 @@ try{
  await page.reload({waitUntil:'domcontentloaded'});await open();await form.getByText(/运行中的用例：1|Active cases: 1/).waitFor();await reports.selectOption(heldId);assert.equal(holds,1);assert.equal(captures.length,3);checks.push('admitted-case-survives-browser-reload-without-replay')
  await source.fill(JSON.stringify(scenario('LAB_AFTER_CANCEL')));await form.getByRole('button',{name:/开始新用例|Start new case/}).click();await form.getByText('LAB_REPLY_4',{exact:true}).waitFor();assert.equal(holds,1);assert.ok(peak>=2);const secondId=await reports.inputValue();checks.push('held-case-does-not-block-another-conversation')
  await reports.selectOption(heldId);await form.getByRole('button',{name:/取消用例|Cancel case/}).click();await form.getByText(/执行状态：已取消|Lifecycle: cancelled/).waitFor();await until(()=>active===0);assert.equal(captures.length,4);checks.push('explicit-cancel-joins-http-and-preserves-report')
+ await form.locator('details').first().locator('summary').click();await form.getByRole('switch',{name:/^启用媒体原件$|^Enable original media$/}).click();await form.getByRole('button',{name:/^保存$|^Save$/}).click();await form.getByText(/^已应用保存的配置$|^Saved settings active$/).waitFor()
+ const mediaCase={title:'Native browser originals',actors:['alice'],conversations:[{id:'lounge',kind:'group'}],stages:[{inputs:[{id:'image',actor:'alice',conversation:'lounge',text:'LAB_MEDIA_FIXTURE',directed:false}]}]};await source.fill(JSON.stringify(mediaCase))
+ const png=await sharp({create:{width:3840,height:2160,channels:4,background:'#2468ad'}}).png().toBuffer(),gif=gifenc.GIFEncoder(),palette=[[255,0,0],[0,0,255]];gif.writeFrame(new Uint8Array(64).fill(0),8,8,{palette,delay:100,repeat:0});gif.writeFrame(new Uint8Array(64).fill(1),8,8,{palette,delay:100});gif.finish()
+ const samples=4000,wav=Buffer.alloc(44+samples*2);wav.write('RIFF',0);wav.writeUInt32LE(wav.length-8,4);wav.write('WAVEfmt ',8);wav.writeUInt32LE(16,16);wav.writeUInt16LE(1,20);wav.writeUInt16LE(1,22);wav.writeUInt32LE(8000,24);wav.writeUInt32LE(16000,28);wav.writeUInt16LE(2,32);wav.writeUInt16LE(16,34);wav.write('data',36);wav.writeUInt32LE(samples*2,40);for(let i=0;i<samples;i++)wav.writeInt16LE(Math.round(Math.sin(i*Math.PI*2*440/8000)*8000),44+i*2)
+ const files=[{name:'original-4k.png',mimeType:'image/png',buffer:png},{name:'motion.gif',mimeType:'image/gif',buffer:Buffer.from(gif.bytes())},{name:'voice.wav',mimeType:'audio/wav',buffer:wav}]
+ await page.evaluate(()=>{const original=File.prototype.arrayBuffer,state={entered:false,release:()=>{},restore:()=>{File.prototype.arrayBuffer=original}};window.__labUploadGate=state;File.prototype.arrayBuffer=function(){if(this.name==='delayed.png')return new Promise(resolve=>{state.entered=true;state.release=()=>resolve(original.call(this))});return original.call(this)}})
+ try{await form.getByLabel(/^添加原始文件$|^Add original files$/).setInputFiles([{name:'delayed.png',mimeType:'image/png',buffer:png}]);await until(()=>page.evaluate(()=>window.__labUploadGate.entered));const changed=JSON.stringify({...mediaCase,title:'Newer editor draft'});await source.fill(changed);await page.evaluate(()=>window.__labUploadGate.release());await form.getByText(/读取文件期间草稿已变化|The draft changed while reading files/).waitFor();assert.equal(await source.inputValue(),changed)}finally{await page.evaluate(()=>{window.__labUploadGate.restore();delete window.__labUploadGate})}
+ checks.push('file-read-race-retains-the-newer-case-draft');await source.fill(JSON.stringify(mediaCase))
+ await form.getByLabel(/^添加原始文件$|^Add original files$/).setInputFiles(files);await until(async()=>JSON.parse(await source.inputValue()).assets?.length===3);const uploaded=JSON.parse(await source.inputValue());assert.equal(uploaded.stages[0].inputs[0].text,'LAB_MEDIA_FIXTURE');assert.deepEqual(uploaded.stages[0].inputs[0].media.map(value=>value.type),['image','image','audio']);for(const [index,asset]of uploaded.assets.entries())assert.deepEqual(Buffer.from(asset.base64,'base64'),files[index].buffer)
+ await form.getByRole('button',{name:/开始新用例|Start new case/}).click();await form.getByText(/执行状态：已完成|Lifecycle: completed/).waitFor();await until(async()=>await form.locator('.imlab-original').count()===4);const mediaId=await reports.inputValue();assert.equal(captures.length,4)
+ const image=form.locator('.imlab-original img').first();await until(async()=>await image.evaluate(element=>element.complete&&element.naturalWidth===3840&&element.naturalHeight===2160));const audio=form.locator('.imlab-original audio');await audio.evaluate(element=>{element.muted=true;element.load()});await until(async()=>await audio.evaluate(element=>element.readyState>=3&&element.duration>0))
+ const links=form.getByRole('link',{name:/^下载原件$|^Download original$/});assert.equal(await links.count(),4)
+ for(let i=0;i<3;i++){const href=await links.nth(i).getAttribute('href'),response=await context.request.get(origin+href);assert.equal(response.status(),200);assert.deepEqual(await response.body(),files[i].buffer);assert.equal(Number(response.headers()['content-length']),files[i].buffer.length)}
+ const originalDownload=page.waitForEvent('download');await links.nth(3).click();const generated=await originalDownload;assert.ok((await readFile(await generated.path(),'utf8')).includes('LAB_GENERATED_FILE'))
+ await form.locator('.imlab-originals').scrollIntoViewIfNeeded();await page.screenshot({path:join(attempt,'media-originals.png')});checks.push('browser-selected-4k-gif-and-wav-originals-traverse-native-consumer-preview-decode-and-exact-downloads')
+ await form.getByRole('switch',{name:/^启用媒体原件$|^Enable original media$/}).click();await form.getByRole('button',{name:/^保存$|^Save$/}).click();await until(async()=>await form.getByRole('button',{name:/^刷新$|^Refresh$/}).isEnabled());await form.getByText(/^已应用保存的配置$|^Saved settings active$/).waitFor();assert.equal(await form.getByLabel(/^添加原始文件$|^Add original files$/).isDisabled(),true)
+ const retainedUrl=await form.getByRole('link',{name:/^下载原件$|^Download original$/}).first().getAttribute('href'),retainedResponse=await context.request.get(origin+retainedUrl);assert.equal(retainedResponse.status(),200);assert.deepEqual(await retainedResponse.body(),png);assert.equal(captures.length,4);checks.push('disabling-new-media-keeps-retained-original-downloads')
+ await form.getByRole('switch',{name:/^启用媒体原件$|^Enable original media$/}).click();await form.getByRole('button',{name:/^保存$|^Save$/}).click();await until(async()=>await form.getByRole('button',{name:/^刷新$|^Refresh$/}).isEnabled());await form.getByText(/^已应用保存的配置$|^Saved settings active$/).waitFor()
+ await page.reload({waitUntil:'domcontentloaded'});await open();await reports.selectOption(mediaId);await until(async()=>await form.locator('.imlab-original').count()===4);assert.equal(captures.length,4);checks.push('original-media-report-survives-reload-without-another-model-call')
  await reports.selectOption(secondId);await form.getByText('LAB_REPLY_4',{exact:true}).waitFor();await page.setViewportSize({width:1280,height:1700});await form.evaluate(element=>element.scrollIntoView({block:'start'}));await page.screenshot({path:join(attempt,'light.png'),fullPage:true});await page.emulateMedia({colorScheme:'dark'});await page.screenshot({path:join(attempt,'dark.png'),fullPage:true})
  await page.getByRole('button',{name:/^收起侧边栏$|^Collapse sidebar$/}).click();await page.setViewportSize({width:520,height:1700});await form.evaluate(element=>element.scrollIntoView({block:'start'}));assert.ok(await form.evaluate(element=>element.scrollWidth<=element.clientWidth+2));assert.ok(await form.evaluate(element=>[...element.querySelectorAll('input,select,textarea')].filter(item=>item.getClientRects().length).every(item=>{const rect=item.getBoundingClientRect();return rect.left>=0&&rect.right<=innerWidth})));await page.screenshot({path:join(attempt,'narrow.png'),fullPage:true});checks.push('native-light-dark-and-narrow-layout')
  await form.getByRole('button',{name:/^重启运行时$|^Restart runtime$/}).click();await page.getByText(/^实验室运行时已重启$|^Lab runtime restarted$/).waitFor();await until(async()=>await reports.locator('option').filter({hasText:firstId}).count()>0);await reports.selectOption(firstId);await form.getByText('LAB_REPLY_2',{exact:true}).waitFor();assert.equal(captures.length,4)
