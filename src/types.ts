@@ -7,7 +7,7 @@ export type RunId=Branded<'im-lab.run'>
 /** Local aliases are resolved to run-prefixed authenticated identities. */
 export interface Conversation{readonly id:string;readonly kind:'group'|'private'}
 /** One synthetic input; mentions of another actor never become a bot mention. */
-export interface ScenarioInput{readonly id:string;readonly actor:string;readonly conversation:string;readonly text:string;readonly directed:boolean;readonly mentionActor?:string|undefined;readonly replyTo?:string|undefined;readonly card?:{readonly format:'json'|'xml';readonly content:string}|undefined}
+export interface ScenarioInput{readonly id:string;readonly actor:string;readonly conversation:string;readonly text:string;readonly directed:boolean;readonly mentionActor?:string|undefined;readonly replyTo?:string|undefined;readonly replyToOutput?:{readonly stage:number;readonly index:number}|undefined;readonly card?:{readonly format:'json'|'xml';readonly content:string}|undefined}
 /** Inputs in one stage enter concurrently; the next stage waits for their consumers to settle. */
 export interface ScenarioStage{readonly inputs:readonly ScenarioInput[]}
 /** Complete original test case is retained before admitting its first input. */

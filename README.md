@@ -56,7 +56,7 @@ The source representation separates actor aliases, conversation aliases and stag
 
 The normal consumer decides whether to answer. A `completed` result means the admitted stages settled; it is not a semantic-quality verdict, proof of a successful model turn, or QQ delivery verification. Captures preserve structured text, mentions, reply IDs and opaque media references. `unresolvedMedia` counts references that still lack final byte materialization.
 
-An input may also carry `replyTo` and one `{format, content}` card. Quotes must target an input ID from an earlier stage in the same conversation; absent, concurrent or cross-conversation targets fail before execution. Cards retain their original JSON/XML string and share the text capacity with the body. A card can have an empty text body; the installed consumer still owns parsing, search and page access. This only quotes existing inputs, not generated bot replies selected by input alias.
+An input can quote an earlier input with `replyTo`, or an earlier captured bot output with `replyToOutput: {"stage": 0, "index": 0}`; never both. Stage and output indexes start at zero. The output index selects only the same conversation in durable capture order during that stage, not a particular input or another conversation. Concurrent/future selectors fail before execution; if the selected earlier output does not exist, the run retains its source and fails before publishing the dependent input. One `{format, content}` card can retain original JSON/XML and share the text capacity with the body. An empty text body requires a card; the installed consumer owns parsing, search and page access.
 
 <a id="storage-and-cancellation"></a>
 ## Storage and cancellation

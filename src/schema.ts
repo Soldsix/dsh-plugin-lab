@@ -8,7 +8,7 @@ import type {RunId,Scenario,JournalEvent} from './types.ts'
 const alias=z.string().regex(/^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/)
 /** Run identities are safe single filenames, never operator-supplied paths. */
 export const runIdSchema=z.string().regex(/^[a-z0-9][a-z0-9_-]{15,79}$/).transform(value=>brandString<RunId>(value))
-const input=z.object({id:alias,actor:alias,conversation:alias,text:z.string(),directed:z.boolean(),mentionActor:alias.optional(),replyTo:alias.optional(),card:z.object({format:z.enum(['json','xml']),content:z.string().min(1)}).strict().optional()}).strict()
+const input=z.object({id:alias,actor:alias,conversation:alias,text:z.string(),directed:z.boolean(),mentionActor:alias.optional(),replyTo:alias.optional(),replyToOutput:z.object({stage:z.number().int().nonnegative().safe(),index:z.number().int().nonnegative().safe()}).strict().optional(),card:z.object({format:z.enum(['json','xml']),content:z.string().min(1)}).strict().optional()}).strict()
 /** Pure scenario representation before deployment-specific limits and referent checks. */
 export const scenarioSchema=z.object({title:z.string().min(1).max(200),actors:z.array(alias).min(1),conversations:z.array(z.object({id:alias,kind:z.enum(['group','private'])}).strict()).min(1),stages:z.array(z.object({inputs:z.array(input).min(1)}).strict()).min(1)}).strict()
 
@@ -24,11 +24,12 @@ export function parseScenario(value:unknown,config:Spec):Scenario{
  if(actors.size!==scenario.actors.length||conversations.size!==scenario.conversations.length)throw new Error('Duplicate lab alias')
  if(actors.size>config.maxActors||conversations.size>config.maxConversations||scenario.stages.length>config.maxStages)throw new Error('Lab scenario exceeds configured capacity')
  let count=0
- for(const stage of scenario.stages){
+ for(const [stageIndex,stage] of scenario.stages.entries()){
   if(stage.inputs.length>config.maxInputsPerStage)throw new Error('Lab stage exceeds configured capacity')
   for(const entry of stage.inputs){
    if(inputs.has(entry.id)||!actors.has(entry.actor)||!conversations.has(entry.conversation)||(entry.mentionActor&&!actors.has(entry.mentionActor)))throw new Error('Lab scenario reference is invalid')
    if(entry.text.length+(entry.card?.content.length??0)>config.maxTextChars||(!entry.text.trim()&&!entry.card))throw new Error('Lab input exceeds configured limit')
+   if(entry.replyToOutput&&(entry.replyTo!==undefined||entry.replyToOutput.stage>=stageIndex))throw new Error('Lab output quote must select only an earlier stage')
    if(entry.replyTo&&priorConversations.get(entry.replyTo)!==entry.conversation)throw new Error('Lab quote must target an input from an earlier stage in the same conversation')
    inputs.add(entry.id);count++
   }

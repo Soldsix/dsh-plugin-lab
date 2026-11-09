@@ -9,6 +9,7 @@ import {outputFingerprint} from './identity.ts'
 export class CaptureTransport implements ImTransport{
  private readonly peers=new Map<string,{id:string;kind:'group'|'private'}>()
  private readonly operations=new Map<string,{fingerprint:string;promise:Promise<DeliveryReceipt>}>()
+ private readonly captured:Pick<Capture,'messageId'|'conversation'>[]=[]
  private closed=false
  private serial=0
  private lastFailure:FailureCode|null=null
@@ -17,6 +18,8 @@ export class CaptureTransport implements ImTransport{
  }
  /** @returns the last sanitized capture failure, independently of listener completion. */
  failure():FailureCode|null{return this.lastFailure}
+ /** @returns detached message identities in durable capture order, without message bodies. */
+ messages():readonly Pick<Capture,'messageId'|'conversation'>[]{return this.captured.map(value=>({...value}))}
  /**
   * Check only destinations declared in this run's original source case.
   * @param scope - normalized destination supplied by the consumer.
@@ -38,7 +41,7 @@ export class CaptureTransport implements ImTransport{
   if(existing)return existing.fingerprint===fingerprint?existing.promise:Promise.resolve({status:'failed',code:'rejected'})
   const capture:Capture={operationId:message.operationId,conversation:peer.id,kind:peer.kind,parts:structuredClone(message.parts),messageId:'lab-out/'+this.runId+'/'+(++this.serial)}
   const promise=(async():Promise<DeliveryReceipt>=>{
-   try{await this.journal.append({type:'capture',capture,time:Date.now()});return{status:'accepted',messageIds:[identifier('im.message',capture.messageId)]}}
+   try{await this.journal.append({type:'capture',capture,time:Date.now()});this.captured.push({messageId:capture.messageId,conversation:capture.conversation});return{status:'accepted',messageIds:[identifier('im.message',capture.messageId)]}}
    catch(error){this.lastFailure=failureCode(error);throw error}
   })()
   this.operations.set(message.operationId,{fingerprint,promise});return promise

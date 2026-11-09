@@ -2,7 +2,7 @@
 import {ImRuntime,identifier,type AccountRef,type InboundMessage} from 'dsh-im-kit'
 import {z} from 'zod'
 import type {Spec} from './config.ts'
-import type {RunId,Scenario,ScenarioInput,RunResult,FailureCode,StoredRun,RunAdmission,EngineStatus,RunPage} from './types.ts'
+import type {RunId,Scenario,ScenarioInput,RunResult,FailureCode,StoredRun,RunAdmission,EngineStatus,RunPage,Capture} from './types.ts'
 import type {ReportStream} from './report-stream.ts'
 import {runIdSchema,parseScenario} from './schema.ts'
 import {LabError,failureCode} from './errors.ts'
@@ -103,19 +103,20 @@ export class LabEngine{
   * @returns original bounded report snapshot; active local writers are refused.
   */
  export(id:unknown,signal:AbortSignal):Promise<ReportStream>{const parsed=runIdSchema.safeParse(id);if(!parsed.success)throw new LabError('invalid-scenario');if(this.active.has(parsed.data))throw new LabError('capacity');return RunJournal.export(this.config,parsed.data,signal)}
- private message(runId:RunId,scenario:Scenario,input:ScenarioInput,account:AccountRef):InboundMessage{
+ private message(runId:RunId,scenario:Scenario,input:ScenarioInput,account:AccountRef,quotedOutput:string|undefined):InboundMessage{
   const conversation=scenario.conversations.find(value=>value.id===input.conversation)!
   const user=(alias:string)=>identifier('im.user','lab-actor/'+runId+'/'+alias)
   const now=Date.now()
   return{scope:{account,kind:conversation.kind,peerId:identifier('im.peer','lab-peer/'+runId+'/'+conversation.id)},messageId:identifier('im.message','lab-in/'+runId+'/'+input.id),senderId:user(input.actor),sentAt:now,receivedAt:now,directedToBot:input.directed,
-   parts:[...input.replyTo?[{type:'reply' as const,messageId:identifier('im.message','lab-in/'+runId+'/'+input.replyTo)}]:[],...input.directed?[{type:'mention' as const,userId:identifier('im.user',account.accountId)}]:[],...input.mentionActor?[{type:'mention' as const,userId:user(input.mentionActor)}]:[],{type:'text',text:input.text},...input.card?[{type:'card' as const,format:input.card.format,content:input.card.content}]:[]]}
+   parts:[...quotedOutput?[{type:'reply' as const,messageId:identifier('im.message',quotedOutput)}]:[],...input.replyTo?[{type:'reply' as const,messageId:identifier('im.message','lab-in/'+runId+'/'+input.replyTo)}]:[],...input.directed?[{type:'mention' as const,userId:identifier('im.user',account.accountId)}]:[],...input.mentionActor?[{type:'mention' as const,userId:user(input.mentionActor)}]:[],{type:'text',text:input.text},...input.card?[{type:'card' as const,format:input.card.format,content:input.card.content}]:[]]}
  }
  private async execute(runId:RunId,scenario:Scenario,signal:AbortSignal,admitted:(value:RunAdmission)=>void):Promise<RunResult>{
   const claim=await RunJournal.claim(this.config,runId,scenario)
   if(!claim.created){admitted({runId,replayed:true});return{...claim.stored.result,replayed:true}}
   admitted({runId,replayed:false});this.journals.set(runId,claim.journal)
   const journal=claim.journal,account:AccountRef={tenantId:identifier('im.tenant',this.config.namespace),networkId:identifier('im.network','im-lab'),accountId:identifier('im.account','lab-run/'+runId)}
-  const provider=new CaptureTransport(account,runId,scenario,journal)
+  const provider=new CaptureTransport(account,runId,scenario,journal),outputStages:(readonly Pick<Capture,'messageId'|'conversation'>[])[]=[]
+  let outputCount=0
   let release:(()=>Promise<void>)|undefined,failure:FailureCode|null=null
   try{
    signal.throwIfAborted();release=this.im.register(provider)
@@ -123,9 +124,12 @@ export class LabEngine{
     signal.throwIfAborted()
     const settled=await Promise.allSettled(stage.inputs.map(async input=>{
      signal.throwIfAborted();await journal.append({type:'input',inputId:input.id,time:Date.now()});signal.throwIfAborted()
-     const report=await this.im.publish(this.message(runId,scenario,input,account),signal)
+     const quote=input.replyToOutput,quotedOutput=quote?outputStages[quote.stage]?.filter(value=>value.conversation===input.conversation)[quote.index]?.messageId:undefined
+     if(quote&&!quotedOutput)throw new LabError('invalid-scenario')
+     const report=await this.im.publish(this.message(runId,scenario,input,account,quotedOutput),signal)
      await journal.append({type:'dispatch',inputId:input.id,report,time:Date.now()})
     }))
+    const captured=provider.messages();outputStages.push(captured.slice(outputCount));outputCount=captured.length
     for(const outcome of settled)if(outcome.status==='rejected')failure??=signal.aborted?'cancelled':failureCode(outcome.reason)
     if(failure)break
    }

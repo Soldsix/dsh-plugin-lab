@@ -23,7 +23,7 @@ for(const source of[library,chat,join(root,'artifacts',manifest.name+'-'+manifes
 await writeFile(join(attempt,'inputs.json'),JSON.stringify(archives.map(({name,sha256})=>({name,sha256})),null,2)+'\n')
 const captures=[];let active=0,peak=0,holds=0,parallelArrivals=0,releaseParallel
 const parallel=new Promise(resolve=>{releaseParallel=resolve})
-function marker(data){for(const message of[...data.messages??[]].reverse())if(message.role==='user')for(const block of[...typeof message.content==='string'?[{text:message.content}]:Array.isArray(message.content)?message.content:[]].reverse()){const found=typeof block.text==='string'&&block.text.match(/LAB_(?:PARALLEL_[AB]|FIFTEEN_\d+|AFTER_CANCEL|CARD_SEED|CARD_QUESTION|FIRST|FOLLOW|HOLD)\b/);if(found)return found[0]}return'none'}
+function marker(data){for(const message of[...data.messages??[]].reverse())if(message.role==='user')for(const block of[...typeof message.content==='string'?[{text:message.content}]:Array.isArray(message.content)?message.content:[]].reverse()){const found=typeof block.text==='string'&&block.text.match(/LAB_(?:PARALLEL_[AB]|FIFTEEN_\d+|AFTER_CANCEL|CARD_SEED|CARD_QUESTION|OUTPUT_SEED|OUTPUT_FOLLOW|FIRST|FOLLOW|HOLD)\b/);if(found)return found[0]}return'none'}
 const server=createServer(async(request,response)=>{
  if(request.url==='/fixture/status'){response.setHeader('Content-Type','application/json');response.end(JSON.stringify({requests:captures.length,active,holds}));return}
  if(request.url?.endsWith('/models')){response.setHeader('Content-Type','application/json');response.end(JSON.stringify({object:'list',data:[{id:'deepseek-flash',object:'model',owned_by:'fixture',input_modalities:['text'],output_modalities:['text'],api_capabilities:{anthropic_messages:{}}}]}));return}
@@ -80,9 +80,10 @@ const exit=once(child,'close').then(([code,signal])=>{exitCode=code;return{code,
 try{
  const deadline=Date.now()+90000
  while(Date.now()<deadline){try{result=JSON.parse(await readFile(join(attempt,'result.json'),'utf8'));break}catch(error){if(error.code!=='ENOENT')throw error}assert.equal(exitCode,undefined,'SDK exited before the Lab probe');await delay(30)}
- assert.ok(result,'Lab native probe timed out');assert.equal(result.passed,true,JSON.stringify(result.error));assert.equal(captures.length,23);assert.ok(peak>=2)
+ assert.ok(result,'Lab native probe timed out');assert.equal(result.passed,true,JSON.stringify(result.error));assert.equal(captures.length,25);assert.ok(peak>=2)
  assert.ok(JSON.stringify(captures[1].messages).includes('LAB_FIRST')&&JSON.stringify(captures[1].messages).includes('LAB_REPLY_1'))
  const quoted=captures.find(data=>marker(data)==='LAB_CARD_QUESTION');assert.ok(quoted,'Native card model turn was not captured');const quotedRequest=JSON.stringify(quoted.messages);assert.ok(quotedRequest.includes('SYNTHETIC_PLATFORM_CARD')&&quotedRequest.includes('lab-in/native-lab-quoted-card-0001/seed'),'Native card or quote was lost before the model')
+ const outputFollow=captures.find(data=>marker(data)==='LAB_OUTPUT_FOLLOW');assert.ok(outputFollow,'Generated output quote model turn was not captured');assert.ok(JSON.stringify(outputFollow.messages).includes('lab-out/native-lab-output-quote-0001/1'),'Generated bot message ID was lost before the model')
  for(const data of captures){const current=marker(data),match=current.match(/^LAB_FIFTEEN_(\d+)$/);if(!match)continue;const group=Number(match[1])%3;const all=JSON.stringify(data.messages);for(const seen of all.matchAll(/LAB_FIFTEEN_(\d+)\b/g))assert.equal(Number(seen[1])%3,group,'Native group context crossed conversations')}
  child.stdin.write(JSON.stringify({jsonrpc:'2.0',id:1,method:'shutdown',params:{}})+'\n')
  const stopped=await Promise.race([exit,delay(15000).then(()=>{throw Error('Lab native shutdown timed out')})]);assert.deepEqual(stopped,{code:0,signal:null})

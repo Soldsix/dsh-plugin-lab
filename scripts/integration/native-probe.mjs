@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict'
 import {writeFile} from 'node:fs/promises'
 import {setTimeout as delay} from 'node:timers/promises'
-export const inject=['imLab','qqChat','imLabControl','configEditor','typertGateway','remoteAccess','connection']
+export const inject=['im','imLab','qqChat','imLabControl','configEditor','typertGateway','remoteAccess','connection']
 const source=(text,directed=true)=>({title:'Synthetic native Lab case',actors:['alice'],conversations:[{id:'lounge',kind:'group'}],stages:[{inputs:[{id:'first',actor:'alice',conversation:'lounge',text,directed}]}]})
 export function apply(ctx,config){const work=probe(ctx,config);ctx.effect(()=>async()=>{await work})}
 async function probe(ctx,config){
@@ -61,6 +61,15 @@ async function probe(ctx,config){
   assert.deepEqual((await ctx.imLab.inspect(quotedId)).created.scenario,quoted)
   assert.equal((await ctx.imLab.run({runId:quotedId,scenario:quoted},new AbortController().signal)).replayed,true)
   checks.push('native-consumer-receives-original-platform-card-and-a-prior-message-quote-without-duplicate-model-calls')
+  const outputId='native-lab-output-quote-0001',seen=[]
+  const unsubscribe=ctx.im.subscribe(async message=>{seen.push(message)},message=>message.scope.account.accountId==='lab-run/'+outputId)
+  const outputCase={title:'Quote actual generated reply',actors:['alice','bob'],conversations:[{id:'lounge',kind:'group'}],stages:[{inputs:[{id:'seed',actor:'alice',conversation:'lounge',text:'LAB_OUTPUT_SEED',directed:true}]},{inputs:[{id:'challenge',actor:'bob',conversation:'lounge',text:'LAB_OUTPUT_FOLLOW',directed:true,replyToOutput:{stage:0,index:0}}]}]}
+  try{
+   const result=await ctx.imLab.run({runId:outputId,scenario:outputCase},new AbortController().signal);assert.equal(result.phase,'completed');assert.equal(result.captureCount,2)
+   const saved=await ctx.imLab.inspect(outputId),generated=saved.events.filter(event=>event.type==='capture');assert.equal(seen[1].parts.find(part=>part.type==='reply').messageId,generated[0].capture.messageId)
+   assert.equal((await ctx.imLab.run({runId:outputId,scenario:outputCase},new AbortController().signal)).replayed,true);assert.equal(seen.length,2)
+  }finally{unsubscribe()}
+  checks.push('generated-output-quote-reaches-native-chat-with-exact-receipt-id-and-no-replay')
   const exported=await ctx.imLab.export(firstId,new AbortController().signal),report=await new Response(exported.body).text();await exported.done
   assert.ok(report.includes('LAB_REPLY_1')&&report.includes('LAB_REPLY_2'))
   checks.push('native-full-report-export-retains-all-structured-captures')
