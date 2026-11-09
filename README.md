@@ -35,6 +35,8 @@ Paste a scenario into Scenario JSON and start a new case. Admission returns afte
 
 Run `npm run test:native -- --im-kit-archive <library.tgz> --chat-archive <chat.tgz>` for installed SDK integration, or `npm run test:web -- --im-kit-archive <library.tgz> --chat-archive <chat.tgz> --browser-cache <playwright-browsers>` for a fresh headless Web profile. Real API checks use `npm run test:real-api -- --im-kit-archive <library.tgz> --chat-archive <chat.tgz> --credential-store <managed-credentials.yaml>` with the configured official DeepSeek credential read-only. These tests send no QQ messages and perform no Bilibili writes; third-party code installed by an operator is not sandboxed by the lab.
 
+A DSH Host profile must provide its declared non-optional peer dependencies. Isolated SDK/Web verification uses a pinned pnpm and completes test-profile dependencies from installed DSH package declarations; it neither borrows ancestor dependencies nor changes production profiles.
+
 <a id="scenario-example"></a>
 ## Scenario example
 
@@ -53,6 +55,8 @@ The source representation separates actor aliases, conversation aliases and stag
 ```
 
 The normal consumer decides whether to answer. A `completed` result means the admitted stages settled; it is not a semantic-quality verdict, proof of a successful model turn, or QQ delivery verification. Captures preserve structured text, mentions, reply IDs and opaque media references. `unresolvedMedia` counts references that still lack final byte materialization.
+
+An input may also carry `replyTo` and one `{format, content}` card. Quotes must target an input ID from an earlier stage in the same conversation; absent, concurrent or cross-conversation targets fail before execution. Cards retain their original JSON/XML string and share the text capacity with the body. A card can have an empty text body; the installed consumer still owns parsing, search and page access. This only quotes existing inputs, not generated bot replies selected by input alias.
 
 <a id="storage-and-cancellation"></a>
 ## Storage and cancellation

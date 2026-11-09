@@ -55,6 +55,12 @@ async function probe(ctx,config){
   assert.equal(after.phase,'completed');assert.equal(after.captureCount,1)
   checks.push('lab-cancellation-joins-native-model-and-following-run-recovers')
   assert.equal(ctx.imLab.status().active,0)
+  const quoted={title:'Native quoted platform card',actors:['alice','bob'],conversations:[{id:'lounge',kind:'group'}],stages:[{inputs:[{id:'seed',actor:'alice',conversation:'lounge',text:'LAB_CARD_SEED',directed:true}]},{inputs:[{id:'question',actor:'bob',conversation:'lounge',text:'LAB_CARD_QUESTION',directed:true,replyTo:'seed',card:{format:'json',content:'{"title":"SYNTHETIC_PLATFORM_CARD","url":"https://example.invalid/video"}'}}]}]}
+  const quotedId='native-lab-quoted-card-0001',quotedResult=await ctx.imLab.run({runId:quotedId,scenario:quoted},new AbortController().signal)
+  assert.equal(quotedResult.phase,'completed');assert.equal(quotedResult.captureCount,2)
+  assert.deepEqual((await ctx.imLab.inspect(quotedId)).created.scenario,quoted)
+  assert.equal((await ctx.imLab.run({runId:quotedId,scenario:quoted},new AbortController().signal)).replayed,true)
+  checks.push('native-consumer-receives-original-platform-card-and-a-prior-message-quote-without-duplicate-model-calls')
   const exported=await ctx.imLab.export(firstId,new AbortController().signal),report=await new Response(exported.body).text();await exported.done
   assert.ok(report.includes('LAB_REPLY_1')&&report.includes('LAB_REPLY_2'))
   checks.push('native-full-report-export-retains-all-structured-captures')

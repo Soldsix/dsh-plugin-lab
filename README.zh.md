@@ -35,6 +35,8 @@ kind: "package-bundle"
 
 使用 `npm run test:native -- --im-kit-archive <library.tgz> --chat-archive <chat.tgz>` 验证安装后的 SDK 整合；使用 `npm run test:web -- --im-kit-archive <library.tgz> --chat-archive <chat.tgz> --browser-cache <playwright-browsers>` 验证全新无头 Web profile。真实 API 检查使用 `npm run test:real-api -- --im-kit-archive <library.tgz> --chat-archive <chat.tgz> --credential-store <managed-credentials.yaml>`，只读已配置的 DeepSeek 官方凭据。这些测试不发 QQ 消息、不执行 B 站写入；实验室不对操作者安装的第三方代码提供沙箱。
 
+DSH Host profile 必须先具备其公开声明的非可选 peer 依赖。隔离 SDK/Web 验收脚本使用固定版本 pnpm，并按已安装 DSH 包的声明补齐测试 profile 依赖；不会借用父目录依赖，也不会改动生产 profile。
+
 <a id="scenario-example"></a>
 ## 用例示例
 
@@ -53,6 +55,8 @@ kind: "package-bundle"
 ```
 
 是否回复由正式消费者判断。结果 `completed` 只表示已接纳阶段处理结束，不代表语义质量通过、模型成功或 QQ 投送验收。捕获结果保留结构化文字、艾特、引用 ID 与不透明媒体引用；`unresolvedMedia` 统计尚未提取最终字节的引用数量。
+
+输入还可带 `replyTo` 和一个 `{format, content}` 卡片。引用目标必须是同会话较早阶段的输入 ID；不存在、同阶段或跨会话引用会在执行前拒绝。卡片保留原始 JSON/XML 字符串，正文与卡片共用文字容量限制。卡片本身可配空正文；解析、搜索和网页访问仍由实际消费插件决定。这里只模拟引用已有输入，尚不支持按输入别名选择机器人生成的回复。
 
 <a id="storage-and-cancellation"></a>
 ## 存储与取消

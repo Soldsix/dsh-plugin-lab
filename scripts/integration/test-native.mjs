@@ -1,5 +1,7 @@
 /** Install independent archives in a fresh SDK profile and test the real native Chat path. */
 import assert from 'node:assert/strict'
+import {pnpmScript} from './pnpm.mjs'
+import {requiredProfilePeers} from './profile-peers.mjs'
 import {spawn} from 'node:child_process'
 import {once} from 'node:events'
 import {createServer} from 'node:http'
@@ -21,7 +23,7 @@ for(const source of[library,chat,join(root,'artifacts',manifest.name+'-'+manifes
 await writeFile(join(attempt,'inputs.json'),JSON.stringify(archives.map(({name,sha256})=>({name,sha256})),null,2)+'\n')
 const captures=[];let active=0,peak=0,holds=0,parallelArrivals=0,releaseParallel
 const parallel=new Promise(resolve=>{releaseParallel=resolve})
-function marker(data){for(const message of[...data.messages??[]].reverse())if(message.role==='user')for(const block of[...typeof message.content==='string'?[{text:message.content}]:Array.isArray(message.content)?message.content:[]].reverse()){const found=typeof block.text==='string'&&block.text.match(/LAB_(?:PARALLEL_[AB]|FIFTEEN_\d+|AFTER_CANCEL|FIRST|FOLLOW|HOLD)\b/);if(found)return found[0]}return'none'}
+function marker(data){for(const message of[...data.messages??[]].reverse())if(message.role==='user')for(const block of[...typeof message.content==='string'?[{text:message.content}]:Array.isArray(message.content)?message.content:[]].reverse()){const found=typeof block.text==='string'&&block.text.match(/LAB_(?:PARALLEL_[AB]|FIFTEEN_\d+|AFTER_CANCEL|CARD_SEED|CARD_QUESTION|FIRST|FOLLOW|HOLD)\b/);if(found)return found[0]}return'none'}
 const server=createServer(async(request,response)=>{
  if(request.url==='/fixture/status'){response.setHeader('Content-Type','application/json');response.end(JSON.stringify({requests:captures.length,active,holds}));return}
  if(request.url?.endsWith('/models')){response.setHeader('Content-Type','application/json');response.end(JSON.stringify({object:'list',data:[{id:'deepseek-flash',object:'model',owned_by:'fixture',input_modalities:['text'],output_modalities:['text'],api_capabilities:{anthropic_messages:{}}}]}));return}
@@ -59,12 +61,11 @@ async function run(argv,cwd){
 if(!resumed){const composition=await run([dsh,'--profile',profile,'--from-default-profile','sdk','--dump-config'],area);assert.ok(!composition.includes('@deepseek-ai/dsh-agent-preset-registry'),'SDK template now supplies a registry; update the fixture explicitly')}
 const profileManifest=JSON.parse(await readFile(join(profileRoot,'package.json'),'utf8'));profileManifest.pnpm={...profileManifest.pnpm,overrides:manifest.overrides};await writeFile(join(profileRoot,'package.json'),JSON.stringify(profileManifest,null,2)+'\n')
 await writeFile(join(profileRoot,'.npmrc'),'package-import-method=copy\nstore-dir='+join(root,'.test-artifacts','pnpm-store').replaceAll('\\','/')+'\ncache-dir='+join(root,'.test-artifacts','pnpm-cache').replaceAll('\\','/')+'\n')
-let pnpm
-find:for(const directory of(process.env.PATH??'').split(';'))for(const candidate of[join(directory,'pnpm.cjs'),join(directory,'node_modules','pnpm','bin','pnpm.cjs'),join(directory,'node_modules','corepack','dist','pnpm.js')]){try{await realpath(candidate);pnpm=candidate;break find}catch(error){if(error.code!=='ENOENT')throw error}}
-assert.ok(pnpm,'pnpm is required')
+const pnpm=await pnpmScript(root)
 const peerNames=['@deepseek-ai/cordis@~4.1.0','@deepseek-ai/cordis-plugin-loader@~1.1.0','@deepseek-ai/schemastery@~3.19.0',...['agent','agent-preset-registry','app-boot','brand','llm','session','session-persistence','tools','scope','config-editor','typert-protocol','llm-deepseek-api-key','client-connection'].map(name=>'@deepseek-ai/dsh-'+name+'@0.2.2-rc.1')]
 await run([pnpm,'add',archives[0].path,'@deepseek-ai/dsh@0.2.2-rc.1',...peerNames,'--ignore-scripts'],profileRoot)
 await run([dsh,'plugin','--profile',profile,'add',archives[1].path],area);await run([dsh,'plugin','--profile',profile,'add',archives[2].path],area)
+for(;;){const missing=await requiredProfilePeers(profileRoot);if(!missing.length)break;await run([pnpm,'add',...missing,'--ignore-scripts'],profileRoot)}
 const installedFiles={chat:await verifyInstalledArchive(archives[1].path,join(profileRoot,'node_modules','dsh-qq-chat'),join(attempt,'chat-installed-files.json')),lab:await verifyInstalledArchive(archives[2].path,join(profileRoot,'node_modules','dsh-plugin-lab'),join(attempt,'lab-installed-files.json'))}
 const overlay=[
  {id:'plugin-lab-runtime',config:{enabled:true,namespace:'lab-'+basename(attempt).toLowerCase(),dataPath:join(attempt,'lab-data')}},
@@ -79,8 +80,9 @@ const exit=once(child,'close').then(([code,signal])=>{exitCode=code;return{code,
 try{
  const deadline=Date.now()+90000
  while(Date.now()<deadline){try{result=JSON.parse(await readFile(join(attempt,'result.json'),'utf8'));break}catch(error){if(error.code!=='ENOENT')throw error}assert.equal(exitCode,undefined,'SDK exited before the Lab probe');await delay(30)}
- assert.ok(result,'Lab native probe timed out');assert.equal(result.passed,true,JSON.stringify(result.error));assert.equal(captures.length,21);assert.ok(peak>=2)
+ assert.ok(result,'Lab native probe timed out');assert.equal(result.passed,true,JSON.stringify(result.error));assert.equal(captures.length,23);assert.ok(peak>=2)
  assert.ok(JSON.stringify(captures[1].messages).includes('LAB_FIRST')&&JSON.stringify(captures[1].messages).includes('LAB_REPLY_1'))
+ const quoted=captures.find(data=>marker(data)==='LAB_CARD_QUESTION');assert.ok(quoted,'Native card model turn was not captured');const quotedRequest=JSON.stringify(quoted.messages);assert.ok(quotedRequest.includes('SYNTHETIC_PLATFORM_CARD')&&quotedRequest.includes('lab-in/native-lab-quoted-card-0001/seed'),'Native card or quote was lost before the model')
  for(const data of captures){const current=marker(data),match=current.match(/^LAB_FIFTEEN_(\d+)$/);if(!match)continue;const group=Number(match[1])%3;const all=JSON.stringify(data.messages);for(const seen of all.matchAll(/LAB_FIFTEEN_(\d+)\b/g))assert.equal(Number(seen[1])%3,group,'Native group context crossed conversations')}
  child.stdin.write(JSON.stringify({jsonrpc:'2.0',id:1,method:'shutdown',params:{}})+'\n')
  const stopped=await Promise.race([exit,delay(15000).then(()=>{throw Error('Lab native shutdown timed out')})]);assert.deepEqual(stopped,{code:0,signal:null})

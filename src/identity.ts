@@ -8,7 +8,7 @@ const hash=(value:unknown)=>createHash('sha256').update(JSON.stringify(value)).d
  * @param scenario - complete validated or persisted source case.
  * @returns deterministic idempotency digest independent of object insertion order.
  */
-export function scenarioFingerprint(scenario:Scenario):string{return hash([scenario.title,scenario.actors,scenario.conversations.map(value=>[value.id,value.kind]),scenario.stages.map(stage=>stage.inputs.map(value=>[value.id,value.actor,value.conversation,value.text,value.directed,value.mentionActor??null]))])}
+export function scenarioFingerprint(scenario:Scenario):string{return hash([scenario.title,scenario.actors,scenario.conversations.map(value=>[value.id,value.kind]),scenario.stages.map(stage=>stage.inputs.map(value=>[value.id,value.actor,value.conversation,value.text,value.directed,value.mentionActor??null,...value.replyTo===undefined?[]:[['replyTo',value.replyTo]],...value.card===undefined?[]:[['card',value.card.format,value.card.content]]]))])}
 function part(value:MessagePart):readonly unknown[]{
  switch(value.type){
   case'text':return[value.type,value.text]
