@@ -8,7 +8,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Exercise staged conversations with synthetic identities, retain complete source cases before computation, and capture structured outbound messages locally. Native owner controls manage background cases and original downloads. Optional media preserves exact images, audio, video and files through scoped native attachments, with browser uploads and previews. Installed consumers supply models and tools. This remains a development package: merged forwards, background-job draining, external-write capture and cross-platform release verification are pending.
+Exercise staged conversations with synthetic identities, retain complete source cases before computation, and capture structured outbound messages locally. Native owner controls manage background cases and original downloads. Optional media preserves exact images, audio, video and files through scoped native attachments, with browser uploads and previews. Installed consumers supply models and tools. This remains a development package: merged forwards, background-job draining and external-write capture are pending.
 
 ## Table of Contents
 
@@ -25,7 +25,7 @@ Exercise staged conversations with synthetic identities, retain complete source 
 
 The development bundle targets DSH 0.2.2-rc.1 and Node ^22.19 or >=24. It uses independent dsh-im-kit 0.2.1 and dsh-media-kit 0.2.0 libraries plus the Host attachment capability. It is disabled by default and requires a dedicated profile without another IM provider. Each run binds synthetic actors, peers and a separate account. An installed consumer such as dsh-qq-chat supplies actual chat behavior; the lab implements no model client or live QQ sender.
 
-Isolated SDK and Web profiles install the tarballs through the normal DSH plugin manager; no production profile is imported. After installing peer dependencies, `npm run check` builds and tests the source. `npm pack --pack-destination artifacts` creates the package used by the integration scripts. The Host service offers `run`, background `start`, `wait`, `cancel`, `inspect`, `list`, `export` and metadata-only `status`. A missing consumer is an explicit failure.
+Isolated SDK and Web profiles install the tarballs through the normal DSH plugin manager; no production profile is imported. After installing peer dependencies, `npm run check` builds and tests the source. Building initializes the archive destination; `npm pack --pack-destination artifacts` creates the package used by the integration scripts. The Host service offers `run`, background `start`, `wait`, `cancel`, `inspect`, `list`, `export` and metadata-only `status`. A missing consumer is an explicit failure.
 
 Install the development release in a dedicated profile, then install the consumers you want to test in that same profile. The default Web template supplies native attachments; other templates must provide that service explicitly. The lab does not install a chat, vision, search or generation consumer for you.
 
@@ -137,6 +137,6 @@ This package registers no model tool and does not add a prompt or request its ow
 <a id="known-limitations-and-deferred-work"></a>
 
 - Local tests cover original media, three concurrent 15-actor cases, owner permissions, cancellation, durable background cases, original downloads and browser upload/preview/decode. They do not prove natural dialogue, OCR identity accuracy, synthesis quality or complete application behavior.
-- Earlier real DeepSeek text smokes cover context recall, arithmetic and retained public replies. This media checkpoint uses controlled local model fixtures and real native attachment APIs, not new upstream model calls. Linux and Desktop release verification remain pending.
+- Earlier real DeepSeek text smokes cover context recall, arithmetic and retained public replies. This media checkpoint uses controlled local model fixtures and real native attachment APIs, not new upstream model calls. Repository CI exercises Windows/Linux packages and native profiles plus Linux Web; Desktop and real QQ delivery remain unverified.
 - Merged forwards, final QQ encoding, background-job draining and captured platform writes need additional adapters. Arbitrary trusted Host code is not sandboxed, and this package does not silently block or capture its direct external writes.
 - Owner reports retain full source text, source bytes and native receipts locally without encryption. Control operations and downloads reject non-owners even with global Remote permissions. Core Host hot-replacement limits documented by Chat also apply.
